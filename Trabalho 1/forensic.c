@@ -9,6 +9,8 @@
 #include <fcntl.h>
 #include <string.h> 
 
+#include "others.c"
+
 #define REC         0
 #define MD5         1
 #define SHA1        2
@@ -17,26 +19,77 @@
 #define LOG         5
 #define NUM_OPTIONS 6
 
-void incUsage(){
-    printf("Illegal use/number of arguments\n");
-    printf("Usage: forensic [-r] [-h [md5[,sha1[,sha256]]] [-o <outfile>] [-v] <file|dir>\n");
-    exit(1);
-}
 
-
-void analiseFile(char* file) {
+void analiseFile(bool array[], char* file) {
 
     struct stat stat_entry;
+    char outputString[1000]; //string that will have all the information in the end, and that is going to be printed
 
     if(lstat(file, &stat_entry) == -1){
         perror("Stat error");
-        exit(1);
+        exit(3);
     }
 
     if(S_ISREG(stat_entry.st_mode)){ //if regular file
 
-        
+        strcat(outputString, file); //appends file name
+
+        int fd, fdOutStream;
+
+        //creates a new file, in order to store the output of the command call
+        if((fd = open("123.txt", O_WRONLY | O_CREAT, 0644)) == -1){
+            perror("Temporary file");
+            exit(3);
+        }
+
+        if((fdOutStream = dup(STDOUT_FILENO)) == -1){ //saves the output stream descriptor, to be used later
+            perror("dup");
+            exit(3);
+        }
+
+        if(dup2(fd, STDOUT_FILENO) == -1){ //the standard output now goes to the file previously created
+            perror("dup2");
+            exit(3);
+        }
+
+
+        pid_t pid = fork();
+        if(pid == -1){
+            perror("fork");
+            exit(3);
+        }
+        else if(pid > 0){ //parent process
+
+            int status;
+            pid_t childPid = wait(&status);
+            if(childPid == -1 || WEXITSTATUS(status) != 0){
+                printf("Problem with wait/child!\n");
+                exit(3);
+            }
+        }
+        else if(pid == 0){ //child process
+
+            execlp("file", "file", file, NULL);
+        }
+
+
+        char buffer[255]; int rb;
+        if((rb = read(fd, buffer, 255)) <= 0){
+            perror("Error with read");
+            exit(3);
+        }
+
+        buffer[rb] = 0;
+
+        if(dup2(STDOUT_FILENO, fdOutStream) == -1){ //"reset" the stardard output
+            perror("dup2");
+            exit(3);
+        }
+
+        strcat(outputString, firstCharAfterSpace(buffer));
+        printf("\n%s\n", outputString);
     }
+
 }
 
 //-------------------------
@@ -181,37 +234,7 @@ int main(int argc, char* argv[], char* envp[]) {
 
     char* inputName = argv[argc - 1]; //name of the file or directory
 
-    printf("REC: ");
-    if(boolArray[REC])
-        printf("yes\n");
-    else printf("no\n");
-
-    printf("MD5: ");
-    if(boolArray[MD5])
-        printf("yes\n");
-    else printf("no\n");
-
-    printf("SHA1: ");
-    if(boolArray[SHA1])
-        printf("yes\n");
-    else printf("no\n");
-
-    printf("SHA256: ");
-    if(boolArray[SHA256])
-        printf("yes\n");
-    else printf("no\n");
-
-    printf("OUT: ");
-    if(boolArray[OUT])
-        printf("yes, file descriptor %d\n", fdOut);
-    else printf("no\n");
-
-    printf("LOG: ");
-    if(boolArray[LOG])
-        printf("yes, file name %s\n", getenv("LOGFILENAME"));
-    else printf("no\n");
-
-    printf("File name: %s\n\n", inputName);
+    analiseFile(boolArray, inputName);
 
     return 0;
 }
