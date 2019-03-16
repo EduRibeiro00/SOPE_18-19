@@ -10,6 +10,7 @@
 #include <string.h> 
 
 #include "others.c"
+#include "forensicAux.c"
 
 #define REC         0
 #define MD5         1
@@ -19,6 +20,7 @@
 #define LOG         5
 #define NUM_OPTIONS 6
 
+#define MAX_SIZE    255
 
 void analiseFile(bool array[], char* file) {
 
@@ -34,58 +36,11 @@ void analiseFile(bool array[], char* file) {
 
         strcat(outputString, file); //appends file name
 
-        int fd, fdOutStream;
+        char buffer[MAX_SIZE];
 
-        //creates a new file, in order to store the output of the command call
-        if((fd = open("123.txt", O_WRONLY | O_CREAT, 0644)) == -1){
-            perror("Temporary file");
-            exit(3);
-        }
+        commandToString(buffer, MAX_SIZE, "file", file); //calls the "file" command, and extracts its result
 
-        if((fdOutStream = dup(STDOUT_FILENO)) == -1){ //saves the output stream descriptor, to be used later
-            perror("dup");
-            exit(3);
-        }
-
-        if(dup2(fd, STDOUT_FILENO) == -1){ //the standard output now goes to the file previously created
-            perror("dup2");
-            exit(3);
-        }
-
-
-        pid_t pid = fork();
-        if(pid == -1){
-            perror("fork");
-            exit(3);
-        }
-        else if(pid > 0){ //parent process
-
-            int status;
-            pid_t childPid = wait(&status);
-            if(childPid == -1 || WEXITSTATUS(status) != 0){
-                printf("Problem with wait/child!\n");
-                exit(3);
-            }
-        }
-        else if(pid == 0){ //child process
-
-            execlp("file", "file", file, NULL);
-        }
-
-
-        char buffer[255]; int rb;
-        if((rb = read(fd, buffer, 255)) <= 0){
-            perror("Error with read");
-            exit(3);
-        }
-
-        buffer[rb] = 0;
-
-        if(dup2(STDOUT_FILENO, fdOutStream) == -1){ //"reset" the stardard output
-            perror("dup2");
-            exit(3);
-        }
-
+        strcat(outputString, ",");
         strcat(outputString, firstCharAfterSpace(buffer));
         printf("\n%s\n", outputString);
     }
