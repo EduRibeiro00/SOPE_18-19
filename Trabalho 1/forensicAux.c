@@ -25,12 +25,17 @@ void commandToString(char* result, int max_size, char* command, char* file){
             exit(3);
         }
 
-        if(fgets(result, max_size, fileOut) == NULL){
+        if(fgets(result, max_size, fileOut) == NULL){ //extracts the result of the command from the file pointer
             printf("Error with fgets!\n");
             exit(3);
         }
 
         result[strlen(result) - 1] = 0; //gets rid of the newline
+
+        if(pclose(fileOut) != 0){
+            printf("Pclose error!\n");
+            exit(3);
+        }
 }
 
 //-------------------------
