@@ -7,7 +7,8 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <string.h> 
+#include <string.h>
+#include <time.h>
 
 #include "others.c"
 #include "forensicAux.c"
@@ -39,10 +40,50 @@ void analiseFile(bool array[], char* file) {
         char buffer[MAX_SIZE];
 
         commandToString(buffer, MAX_SIZE, "file", file); //calls the "file" command, and extracts its result
-
         strcat(outputString, ",");
-        strcat(outputString, firstCharAfterSpace(buffer));
-        printf("\n%s\n", outputString);
+        strcat(outputString, firstCharAfterSpace(buffer)); //appends file type
+
+        sprintf(buffer, "%lld", stat_entry.st_size);
+        strcat(outputString, ",");
+        strcat(outputString, buffer); //appends file size
+
+        getFileAcess(buffer, MAX_SIZE, stat_entry.st_mode);
+        strcat(outputString, ",");
+        strcat(outputString, buffer); //appends file access
+
+        struct tm *ts;
+
+        ts = localtime(&stat_entry.st_birthtime);
+	    strftime(buffer, MAX_SIZE, "%Y-%m-%dT%H:%M:%S", ts);
+	    strcat(outputString, ",");
+        strcat(outputString, buffer); //appends file creation date
+
+	    ts = localtime(&stat_entry.st_mtime);
+	    strftime(buffer, MAX_SIZE, "%Y-%m-%dT%H:%M:%S", ts);
+	    strcat(outputString, ",");
+        strcat(outputString, buffer); //appends file modification date
+
+
+        if(array[MD5]){ //if md5 option selected
+            commandToString(buffer, MAX_SIZE, "md5sum", file); //calls the "md5" command, and extracts its result
+            strcat(outputString, ",");
+            strcat(outputString, strtok(buffer, " ")); //apends md5 hash code
+        }
+
+        if(array[SHA1]){ //if sha1 option selected
+            commandToString(buffer, MAX_SIZE, "sha1sum", file); //calls the "sha1" command, and extracts its result
+            strcat(outputString, ",");
+            strcat(outputString, strtok(buffer, " ")); //apends sha1 hash code
+        }
+
+        if(array[SHA256]){ //if sha256 option selected
+            commandToString(buffer, MAX_SIZE, "sha256sum", file); //calls the "sha256" command, and extracts its result
+            strcat(outputString, ",");
+            strcat(outputString, strtok(buffer, " ")); //apends sha256 hash code
+        }
+
+
+        printf("\n%s\n\n", outputString);    
     }
 
 }
@@ -188,6 +229,9 @@ int main(int argc, char* argv[], char* envp[]) {
     extractOptions(boolArray, argc, argv, &fdOut, &fdLog);
 
     char* inputName = argv[argc - 1]; //name of the file or directory
+
+    if(boolArray[OUT])
+        dup2(fdOut, STDOUT_FILENO);
 
     analiseFile(boolArray, inputName);
 

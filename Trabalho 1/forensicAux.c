@@ -70,3 +70,29 @@ void commandToString(char* result, int max_size, char* command, char* file){
         }
 
 }
+
+//-------------------------
+
+void getFileAcess(char* result, int size, mode_t mode){
+
+    memset(result, 0, size);
+    bool flag = false;
+
+    if(mode & S_IRUSR){ //user read access
+        strcat(result, "r");
+        flag = true;
+    }
+
+    if(mode & S_IWUSR){ //user write access
+        strcat(result, "w");
+        flag = true;
+    }
+
+    if(mode & S_IXUSR){ //user execute access
+        strcat(result, "x");
+        flag = true;
+    }
+
+    if(!flag)
+        strcat(result, "-"); //if no permissions were identified...
+}
