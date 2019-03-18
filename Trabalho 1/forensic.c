@@ -23,10 +23,11 @@
 
 #define MAX_SIZE    255
 
-void analiseFile(bool array[], char* file) {
+void analiseFile(bool array[], char* file, int fdOut) {
 
     struct stat stat_entry;
     char outputString[1000]; //string that will have all the information in the end, and that is going to be printed
+    outputString[0] = '\0';
 
     if(lstat(file, &stat_entry) == -1){
         perror("Stat error");
@@ -43,7 +44,7 @@ void analiseFile(bool array[], char* file) {
         strcat(outputString, ",");
         strcat(outputString, firstCharAfterSpace(buffer)); //appends file type
 
-        sprintf(buffer, "%lld", stat_entry.st_size);
+        sprintf(buffer, "%d", (int) stat_entry.st_size);
         strcat(outputString, ",");
         strcat(outputString, buffer); //appends file size
 
@@ -53,10 +54,10 @@ void analiseFile(bool array[], char* file) {
 
         struct tm *ts;
 
-        ts = localtime(&stat_entry.st_birthtime);
+        ts = localtime(&stat_entry.st_atime);
 	    strftime(buffer, MAX_SIZE, "%Y-%m-%dT%H:%M:%S", ts);
 	    strcat(outputString, ",");
-        strcat(outputString, buffer); //appends file creation date
+        strcat(outputString, buffer); //appends file access date
 
 	    ts = localtime(&stat_entry.st_mtime);
 	    strftime(buffer, MAX_SIZE, "%Y-%m-%dT%H:%M:%S", ts);
@@ -83,9 +84,32 @@ void analiseFile(bool array[], char* file) {
         }
 
 
-        printf("\n%s\n\n", outputString);    
+        write(fdOut, outputString, strlen(outputString)); //writes the output
+        write(fdOut, "\n", 1); 
     }
 
+}
+
+//-------------------------
+
+void analiseDir(bool array[], char* directory, int fdOut){
+
+    DIR* dir;
+    struct dirent* dentry;
+
+    if((dir = opendir(directory)) == NULL){ //open the directory
+        perror(directory);
+        exit(4);
+    }
+
+    if(chdir(directory) != 0){ //change to that directory
+        perror("chdir");
+        exit(4);
+    }
+
+    while((dentry = readdir(dir)) != NULL){ //for every file contained in the directory...
+        analiseFile(array, dentry->d_name, fdOut); //analise it (only if it is regular)  
+    }
 }
 
 //-------------------------
@@ -206,11 +230,13 @@ void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog
     if(!filePresent)
         incUsage();
 
-    if(array[OUT])
-        if((*fdOut = open(fileOut, O_WRONLY | O_CREAT, 0644)) == -1){
+    if(array[OUT]){
+        if((*fdOut = open(fileOut, O_WRONLY | O_CREAT | O_APPEND, 0644)) == -1){
             perror(fileOut);
             exit(2);
         }
+    }
+    else *fdOut = STDOUT_FILENO;
 
     if(array[LOG])
         if((*fdLog = open(fileLog, O_WRONLY | O_CREAT | O_APPEND, 0644)) == -1){
@@ -230,10 +256,21 @@ int main(int argc, char* argv[], char* envp[]) {
 
     char* inputName = argv[argc - 1]; //name of the file or directory
 
-    if(boolArray[OUT])
-        dup2(fdOut, STDOUT_FILENO);
+    //checks the type of the file argument passed
+    switch(checkFileType(inputName)){
 
-    analiseFile(boolArray, inputName);
+        case 1: //regular file
+            analiseFile(boolArray, inputName, fdOut);            
+            break;
+
+        case 2: //directory
+            analiseDir(boolArray, inputName, fdOut);      
+            break;
+
+        default: //other (no output)
+            printf("Invalid file passed!\n");
+            break;
+    }
 
     return 0;
 }

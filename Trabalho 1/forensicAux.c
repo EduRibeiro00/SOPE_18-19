@@ -21,19 +21,19 @@ void commandToString(char* result, int max_size, char* command, char* file){
         strcat(pipeCommand, file);
 
         if((fileOut = popen(pipeCommand, "r")) == NULL){ //uses a pipe in order to get the output of the command
-            printf("Popen error!\n");
+            fprintf(stderr, "Popen error!\n");
             exit(3);
         }
 
         if(fgets(result, max_size, fileOut) == NULL){ //extracts the result of the command from the file pointer
-            printf("Error with fgets!\n");
+            fprintf(stderr, "Error with fgets!\n");
             exit(3);
         }
 
-        result[strlen(result) - 1] = 0; //gets rid of the newline
+        result[strlen(result) - 1] = '\0'; //gets rid of the newline
 
         if(pclose(fileOut) != 0){
-            printf("Pclose error!\n");
+            fprintf(stderr, "Pclose error!\n");
             exit(3);
         }
 }
@@ -62,4 +62,30 @@ void getFileAcess(char* result, int size, mode_t mode){
 
     if(!flag)
         strcat(result, "-"); //if no permissions were identified...
+}
+
+//-------------------------
+
+/**
+ * return:
+ * 1 --> regular file
+ * 2 --> directory
+ * 0 --> other (no output) 
+ */
+int checkFileType(char* name){
+
+    struct stat stat_entry;
+
+    if(lstat(name, &stat_entry) == -1){
+        perror("Stat error");
+        exit(3);
+    }
+
+    if(S_ISREG(stat_entry.st_mode))
+        return 1;
+
+    if(S_ISDIR(stat_entry.st_mode))
+        return 2;
+
+    return 0;
 }
