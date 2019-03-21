@@ -26,3 +26,17 @@ const char* firstCharAfterSpace(const char* input) {
    starting++;
    return starting;
  }
+
+//-------------------------
+
+ const char* firstCharAfterSlash(const char* input) {
+   const char* starting = input;
+   while (*starting != '/' || *starting != '\0') {
+     starting++;
+   }
+
+  if(*starting == '/')
+      starting++;
+
+   return starting;
+ }

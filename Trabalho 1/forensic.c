@@ -23,6 +23,8 @@
 
 #define MAX_SIZE    255
 
+char* command; //will store the command used to call the function, in order to use it recursively
+
 void analiseFile(bool array[], char* file, int fdOut) {
 
     struct stat stat_entry;
@@ -102,10 +104,50 @@ void analiseDir(bool array[], char* directory, int fdOut){
         exit(4);
     }
 
-    if(chdir(directory) != 0){ //change to that directory
-        perror("chdir");
-        exit(4);
+    //if the recursive option is not selected
+    if(!array[REC]){
+
+        if(chdir(directory) != 0){ //change to that directory
+            perror("chdir");
+            exit(4);
+        }
     }
+    else{
+
+        char* firstDir = strtok(directory, "/"); //main directory
+        char* subDir = firstCharAfterSlash(directory); //rest of the path
+
+        if(chdir(directory) != 0){ //change to the current directory
+            perror("chdir");
+            exit(4);
+        }
+        
+        //o resto do path, dar append ao nome quando fizermos lstat
+
+        while((dentry = readdir(dir)) != NULL){
+
+            if(checkFileType(dentry->d_name) == 2){ //if it is a directory
+
+                //CRIAR FILHO E FAZER EXEC PARA NOVO DIRETORIO
+
+                pid_t pid;
+
+                if((pid = fork()) == -1) {
+                    perror("fork");
+                    exit(4);
+                }
+                else if(pid == 0) { //child process
+
+                    strcat(command, "/");
+                    strcat(command, dentry->d_name); //appends new directory name to the command string
+
+                    //fazer array para o comando (variavel global, e dps fazer malloc), e chamar exec()
+                }
+            }
+        }
+
+    }
+    
 
     while((dentry = readdir(dir)) != NULL){ //for every file contained in the directory...
         analiseFile(array, dentry->d_name, fdOut); //analise it (only if it is regular)  
@@ -256,6 +298,11 @@ int main(int argc, char* argv[], char* envp[]) {
 
     char* inputName = argv[argc - 1]; //name of the file or directory
 
+    if(boolArray[REC]) {
+        command = (char *) malloc(sizeof(char) * 1000); //allocates memory for the command string
+        storeCommand(command, argv, argc);              //(dynamic memory, because if the recursive option is not selected,
+    }                                                   //no point in having the memory for the command)
+
     //checks the type of the file argument passed
     switch(checkFileType(inputName)){
 
@@ -271,6 +318,18 @@ int main(int argc, char* argv[], char* envp[]) {
             printf("Invalid file passed!\n");
             break;
     }
+
+    if(boolArray[OUT])
+        if(close(fdOut) == -1){
+            perror("close");
+            exit(5);
+        }
+
+    if(boolArray[LOG])
+        if(close(fdLog) == -1){
+            perror("close");
+            exit(5);
+        }
 
     return 0;
 }
