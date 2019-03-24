@@ -21,10 +21,7 @@
 #define LOG         5
 #define NUM_OPTIONS 6
 
-#define MAX_SIZE    255
-
-char** command; //will store the command used to call the function, in order to use it recursively
-int commandLength; //command length (number of arguments)
+#define MAX_SIZE        255
 
 void analiseFile(bool array[], char* file, int fdOut) {
 
@@ -131,40 +128,45 @@ void analiseDir(bool array[], char* directory, int fdOut){
                 else if(pid == 0) { //child process
 
                     char newDir[MAX_SIZE];
-                    strcpy(newDir, directory);
-                    strcat(newDir, "/");
-                    strcat(newDir, dentry->d_name);
-                    command[commandLength - 1] = newDir;
+                    sprintf(newDir, "%s/%s", directory, dentry->d_name);
 
-                    execvp(command[0], command); //calls recursively the program, but on the subdirectory
-                    fprintf(stderr, "Exec failed!");
-                    exit(4);
+                    printf("%s\n", newDir);
+
+                    analiseDir(array, newDir, fdOut); //calls recursively the program, but on the subdirectory
+                    exit(0);
+                }
+                else if(pid > 0) { //parent process
+
+                    int status;
+                    wait(&status);
+                    if(WEXITSTATUS(status) != 0) {
+                        fprintf(stderr, "Child did not end correctly!");
+                        exit(4);
+                    }
                 }
             }
         }
 
         rewinddir(dir); //resets the directory, so we can iterate through it again
 
-        //char* firstDir = strtok(directory, "/"); //main directory
+        char* firstDir = strtok(directory, "/"); //main directory
         char* subDir = firstCharAfterSlash(directory); //rest of the path
 
-        // if(chdir(firstDir) != 0){ //change to the main directory
-        //     perror("chdir");
-        //     exit(4);
-        // }
+        if(chdir(firstDir) != 0){ //change to the main directory
+            perror("chdir");
+            exit(4);
+        }
 
         char name[MAX_SIZE];
 
         //now, searching only for regular files
         while((dentry = readdir(dir)) != NULL) {
-
             sprintf(name, "%s/%s", subDir, dentry->d_name);
             analiseFile(array, name, fdOut); //analise it (only if it is regular)
         }
 
     }
     else {
-        
         while((dentry = readdir(dir)) != NULL){ //for every file contained in the directory...
             analiseFile(array, dentry->d_name, fdOut); //analise it (only if it is regular)  
         }
@@ -316,14 +318,6 @@ int main(int argc, char* argv[], char* envp[]) {
 
     char* inputName = argv[argc - 1]; //name of the file or directory
 
-    if(boolArray[REC]) {
-        command = (char **) malloc(sizeof(char*) * argc);  //allocates memory for the command array
-        storeCommand(command, argv, argc); //(dynamic memory, because if the recursive option is not selected,
-                                           //no point in having the memory for the command)
-        
-        commandLength = argc;   //number of arguments
-    }
-
     //checks the type of the file argument passed
     switch(checkFileType(inputName)){
 
@@ -336,7 +330,7 @@ int main(int argc, char* argv[], char* envp[]) {
             break;
 
         default: //other (no output)
-            printf("Invalid file passed!\n");
+            fprintf(stderr, "Invalid file passed!\n");
             break;
     }
 
@@ -352,8 +346,6 @@ int main(int argc, char* argv[], char* envp[]) {
             exit(5);
         }
 
-    if(boolArray[REC])
-        free(command);
 
     return 0;
 }

@@ -89,23 +89,3 @@ int checkFileType(char* name){
 
     return 0;
 }
-
-//-------------------------
-
-void storeCommand(char** command, char* argv[], int argc) {
-
-    // command[0] = '\0';
-    
-    // strcat(command, argv[0]);
-
-    // for(int i = 1; i < argc; i++) {
-    //     strcat(command, " ");
-    //     strcat(command, argv[i]);
-    // }
-
-
-    //stores all the arguments except the last one (file/directory)
-    for(int i = 0; i < argc - 1; i++)
-        command[i] = argv[i];
-}
-
