@@ -87,9 +87,8 @@ void analiseFile(bool array[], char* file, int fdOut) {
             strcat(outputString, strtok(buffer, " ")); //apends sha256 hash code
         }
 
-
+        strcat(outputString, "\n");
         write(fdOut, outputString, strlen(outputString)); //writes the output
-        write(fdOut, "\n", 1); 
     }
 
 }
@@ -145,15 +144,6 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut){
                     analiseDir(array, subDir, baseDir, fdOut); //calls recursively the program, but on the subdirectory
                     exit(0);
                 }
-                else if(pid > 0) { //parent process
-
-                    int status;
-                    wait(&status);
-                    if(WEXITSTATUS(status) != 0) {
-                        fprintf(stderr, "Child did not end correctly!");
-                        exit(4);
-                    }
-                }
             }
         }
 
@@ -175,6 +165,15 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut){
             else sprintf(name, "%s", dentry->d_name);
 
             analiseFile(array, name, fdOut); //analise it (only if it is regular)
+        }
+
+        //wait for children, and "release" them
+        int status;
+        while(wait(&status) != -1) {
+            if(WEXITSTATUS(status) != 0) {
+                fprintf(stderr, "Child did not end properly!");
+                exit(4);
+            }
         }
 
     }
