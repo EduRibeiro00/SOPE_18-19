@@ -112,3 +112,21 @@ void addFileToLog(int fdLog, char* fileName) {
     write(fdLog, fileName, strlen(fileName));
     write(fdLog, "\n", 1);
 }
+
+//-------------------------
+
+void addDirToLog(int fdLog, char* dirName) {
+    
+    write(fdLog, "ENTERED ", 8);
+    write(fdLog, dirName, strlen(dirName));
+    write(fdLog, "\n", 1);
+}
+
+//-------------------------
+
+void addSignalToLog(int fdLog, char* sigName) {
+
+    write(fdLog, "SIGNAL ", 7);
+    write(fdLog, sigName, strlen(sigName));
+    write(fdLog, "\n", 1);
+}
