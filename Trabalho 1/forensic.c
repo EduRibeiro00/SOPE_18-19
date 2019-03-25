@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/times.h>
+#include <sys/wait.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -21,7 +23,9 @@
 #define LOG         5
 #define NUM_OPTIONS 6
 
-#define MAX_SIZE        255
+#define MAX_SIZE        510
+
+clock_t startTime; //initial starting time of the main process
 
 void analiseFile(bool array[], char* file, int fdOut) {
 
@@ -268,7 +272,10 @@ void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog
             if(array[MD5] || array[SHA1] || array[SHA256])
                 incUsage(); //if it was already activated
 
-            extractHOptions(array, argv[k + 1]);
+            char string[MAX_SIZE];
+            strcpy(string, argv[k + 1]);
+
+            extractHOptions(array, string);
             k++; //skips the next argument, which is part of the -h flag specification
 
         }
@@ -329,6 +336,8 @@ void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog
 //-------------------------
 
 int main(int argc, char* argv[], char* envp[]) {
+
+    startTime = extractTime(); //extracts the starting time
 
     printf("\n");
 

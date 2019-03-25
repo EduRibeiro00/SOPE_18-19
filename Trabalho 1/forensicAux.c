@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <string.h>
 
-#define MAX_SIZE    255
+#define MAX_SIZE    510
 
 void commandToString(char* result, int max_size, char* command, char* file){
 
@@ -88,4 +88,18 @@ int checkFileType(char* name){
         return 2;
 
     return 0;
+}
+
+//-------------------------
+
+void addCommandToLog(int fdLog, char* argv[], int argc) {
+
+    write(fdLog, "COMMAND", 7);
+
+    for(int i = 0; i < argc; i++) {
+        write(fdLog, " ", 1);
+        write(fdLog, argv[i], strlen(argv[i]));
+    }
+
+    write(fdLog, "\n", 1);
 }
