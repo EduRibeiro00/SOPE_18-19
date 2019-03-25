@@ -103,3 +103,12 @@ void addCommandToLog(int fdLog, char* argv[], int argc) {
 
     write(fdLog, "\n", 1);
 }
+
+//-------------------------
+
+void addFileToLog(int fdLog, char* fileName) {
+
+    write(fdLog, "ANALIZED ", 9);
+    write(fdLog, fileName, strlen(fileName));
+    write(fdLog, "\n", 1);
+}
