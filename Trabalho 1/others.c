@@ -30,13 +30,17 @@ const char* firstCharAfterSpace(const char* input) {
 //-------------------------
 
 char* firstCharAfterSlash(char* input) {
-  char* starting = input;
-   while (*starting != '/' || *starting != '\0') {
-     starting++;
-   }
+  // char* starting = input;
+  //  while (*starting != '/' || *starting != '\0') {
+  //    starting++;
+  //  }
 
-  if(*starting == '/')
-      starting++;
+  // if(*starting == '/')
+  //     starting++;
 
-   return starting;
+  //  return starting;
+
+  if(strchr(input, '/') != NULL)
+    return strchr(input, '/') + 1;
+  else return NULL;
  }

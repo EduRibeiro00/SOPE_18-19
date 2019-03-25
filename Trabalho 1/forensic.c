@@ -92,21 +92,24 @@ void analiseFile(bool array[], char* file, int fdOut) {
 
 //-------------------------
 
-void analiseDir(bool array[], char* directory, int fdOut){
+void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut){
 
     DIR* dir;
     struct dirent* dentry;
+
+    char directory[MAX_SIZE];
+    strcpy(directory, baseDir);
+
+    if(strlen(subDir) != 0) {
+        strcat(directory, "/");
+        strcat(directory, subDir);
+    }
 
     if((dir = opendir(directory)) == NULL){ //open the directory
         perror(directory);
         exit(4);
     }
 
-
-    if(chdir(directory) != 0){ //change to that directory
-            perror("chdir");
-            exit(4);
-    }
 
     if(array[REC]) {
 
@@ -117,7 +120,10 @@ void analiseDir(bool array[], char* directory, int fdOut){
             if((strcmp(dentry->d_name, ".") == 0) || (strcmp(dentry->d_name, "..") == 0))
                 continue;
 
-            if(checkFileType(dentry->d_name) == 2){ //if it is a directory
+            char newDir[MAX_SIZE];
+            sprintf(newDir, "%s/%s", directory, dentry->d_name);
+
+            if(checkFileType(newDir) == 2){ //if it is a directory
 
                 pid_t pid;
 
@@ -127,12 +133,12 @@ void analiseDir(bool array[], char* directory, int fdOut){
                 }
                 else if(pid == 0) { //child process
 
-                    char newDir[MAX_SIZE];
-                    sprintf(newDir, "%s/%s", directory, dentry->d_name);
+                    if(strlen(subDir) != 0)
+                        strcat(subDir, "/");
 
-                    printf("%s\n", newDir);
+                    strcat(subDir, dentry->d_name);
 
-                    analiseDir(array, newDir, fdOut); //calls recursively the program, but on the subdirectory
+                    analiseDir(array, subDir, baseDir, fdOut); //calls recursively the program, but on the subdirectory
                     exit(0);
                 }
                 else if(pid > 0) { //parent process
@@ -148,11 +154,9 @@ void analiseDir(bool array[], char* directory, int fdOut){
         }
 
         rewinddir(dir); //resets the directory, so we can iterate through it again
+        
 
-        char* firstDir = strtok(directory, "/"); //main directory
-        char* subDir = firstCharAfterSlash(directory); //rest of the path
-
-        if(chdir(firstDir) != 0){ //change to the main directory
+        if(chdir(baseDir) != 0){ //change to the main directory
             perror("chdir");
             exit(4);
         }
@@ -161,15 +165,30 @@ void analiseDir(bool array[], char* directory, int fdOut){
 
         //now, searching only for regular files
         while((dentry = readdir(dir)) != NULL) {
-            sprintf(name, "%s/%s", subDir, dentry->d_name);
+            
+            if(strlen(subDir) != 0)
+                sprintf(name, "%s/%s", subDir, dentry->d_name);
+            else sprintf(name, "%s", dentry->d_name);
+
             analiseFile(array, name, fdOut); //analise it (only if it is regular)
         }
 
     }
     else {
+
+        if(chdir(directory) != 0){ //change to that directory
+            perror("chdir");
+            exit(4);
+        }
+
         while((dentry = readdir(dir)) != NULL){ //for every file contained in the directory...
             analiseFile(array, dentry->d_name, fdOut); //analise it (only if it is regular)  
         }
+    }
+
+    if(closedir(dir) != 0) {
+        perror("closedir");
+        exit(4);
     }
     
 }
@@ -311,8 +330,13 @@ void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog
 
 int main(int argc, char* argv[], char* envp[]) {
 
+    printf("\n");
+
     bool boolArray[NUM_OPTIONS]; //array to save the different program options
     int fdOut, fdLog;
+    
+    char subDir[MAX_SIZE];
+    subDir[0] = '\0';
 
     extractOptions(boolArray, argc, argv, &fdOut, &fdLog);
 
@@ -326,7 +350,7 @@ int main(int argc, char* argv[], char* envp[]) {
             break;
 
         case 2: //directory
-            analiseDir(boolArray, inputName, fdOut);      
+            analiseDir(boolArray, subDir, inputName, fdOut);      
             break;
 
         default: //other (no output)
@@ -346,6 +370,7 @@ int main(int argc, char* argv[], char* envp[]) {
             exit(5);
         }
 
+    printf("\n");
 
     return 0;
 }
