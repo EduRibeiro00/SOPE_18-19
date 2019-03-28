@@ -25,9 +25,7 @@
 
 #define MAX_SIZE        510
 
-clock_t startTime; //initial starting time of the main process
-
-void analiseFile(bool array[], char* file, int fdOut) {
+void analiseFile(bool array[], char* file, int fdOut, int fdLog) {
 
     struct stat stat_entry;
     char outputString[1000]; //string that will have all the information in the end, and that is going to be printed
@@ -89,13 +87,16 @@ void analiseFile(bool array[], char* file, int fdOut) {
 
         strcat(outputString, "\n");
         write(fdOut, outputString, strlen(outputString)); //writes the output
+
+        if(array[LOG])
+            addFileToLog(fdLog, file); //add file name to the log file
     }
 
 }
 
 //-------------------------
 
-void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut){
+void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut, int fdLog){
 
     DIR* dir;
     struct dirent* dentry;
@@ -112,6 +113,9 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut){
         perror(directory);
         exit(4);
     }
+
+    if(array[LOG])
+        addDirToLog(fdLog, directory); //add directory name to the log file
 
 
     if(array[REC]) {
@@ -141,7 +145,7 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut){
 
                     strcat(subDir, dentry->d_name);
 
-                    analiseDir(array, subDir, baseDir, fdOut); //calls recursively the program, but on the subdirectory
+                    analiseDir(array, subDir, baseDir, fdOut, fdLog); //calls recursively the program, but on the subdirectory
                     exit(0);
                 }
             }
@@ -164,7 +168,7 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut){
                 sprintf(name, "%s/%s", subDir, dentry->d_name);
             else sprintf(name, "%s", dentry->d_name);
 
-            analiseFile(array, name, fdOut); //analise it (only if it is regular)
+            analiseFile(array, name, fdOut, fdLog); //analise it (only if it is regular)
         }
 
         //wait for children, and "release" them
@@ -185,7 +189,7 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut){
         }
 
         while((dentry = readdir(dir)) != NULL){ //for every file contained in the directory...
-            analiseFile(array, dentry->d_name, fdOut); //analise it (only if it is regular)  
+            analiseFile(array, dentry->d_name, fdOut, fdLog); //analise it (only if it is regular)  
         }
     }
 
@@ -318,7 +322,7 @@ void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog
         incUsage();
 
     if(array[OUT]){
-        if((*fdOut = open(fileOut, O_WRONLY | O_CREAT | O_APPEND, 0644)) == -1){
+        if((*fdOut = open(fileOut, O_WRONLY | O_CREAT | O_TRUNC, 0644)) == -1){
             perror(fileOut);
             exit(2);
         }
@@ -348,17 +352,22 @@ int main(int argc, char* argv[], char* envp[]) {
 
     extractOptions(boolArray, argc, argv, &fdOut, &fdLog);
 
+    if(boolArray[LOG]) {
+        ticksPerSecond = sysconf(_SC_CLK_TCK); //extracts the number of ticks per second
+        addCommandToLog(fdLog, argv, argc); //adds the command to the log file
+    }
+
     char* inputName = argv[argc - 1]; //name of the file or directory
 
     //checks the type of the file argument passed
     switch(checkFileType(inputName)){
 
         case 1: //regular file
-            analiseFile(boolArray, inputName, fdOut);            
+            analiseFile(boolArray, inputName, fdOut, fdLog);            
             break;
 
         case 2: //directory
-            analiseDir(boolArray, subDir, inputName, fdOut);      
+            analiseDir(boolArray, subDir, inputName, fdOut, fdLog);      
             break;
 
         default: //other (no output)

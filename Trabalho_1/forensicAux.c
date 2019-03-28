@@ -11,6 +11,11 @@
 
 #define MAX_SIZE    510
 
+clock_t startTime; //initial starting time of the main process
+long ticksPerSecond; //number of clock ticks per second
+
+//-------------------------
+
 void commandToString(char* result, int max_size, char* command, char* file){
 
         FILE* fileOut;
@@ -92,41 +97,69 @@ int checkFileType(char* name){
 
 //-------------------------
 
+void logLineAux(int fdLog, char* str) {
+
+    struct tms tm;
+    clock_t actualTime = times(&tm);
+    double timeValue = (double) (actualTime - startTime) * 1000 / ticksPerSecond; //gets the time in milisseconds
+
+    sprintf(str, "%.2f - %8d - ", timeValue, getpid());
+}
+
+
+//-------------------------
+
 void addCommandToLog(int fdLog, char* argv[], int argc) {
 
-    write(fdLog, "COMMAND", 7);
+    char str[MAX_SIZE];
+    logLineAux(fdLog, str);
+
+    strcat(str, "COMMAND");
 
     for(int i = 0; i < argc; i++) {
-        write(fdLog, " ", 1);
-        write(fdLog, argv[i], strlen(argv[i]));
+        strcat(str, " ");
+        strcat(str, argv[i]);
     }
 
-    write(fdLog, "\n", 1);
+    strcat(str, "\n");
+    write(fdLog, str, strlen(str));
 }
 
 //-------------------------
 
 void addFileToLog(int fdLog, char* fileName) {
 
-    write(fdLog, "ANALIZED ", 9);
-    write(fdLog, fileName, strlen(fileName));
-    write(fdLog, "\n", 1);
+    char str[MAX_SIZE];
+    logLineAux(fdLog, str);
+
+    strcat(str, "ANALIZED ");
+    strcat(str, fileName);
+    strcat(str, "\n");
+    write(fdLog, str, strlen(str));
 }
 
 //-------------------------
 
 void addDirToLog(int fdLog, char* dirName) {
     
-    write(fdLog, "ENTERED ", 8);
-    write(fdLog, dirName, strlen(dirName));
-    write(fdLog, "\n", 1);
+    char str[MAX_SIZE];
+    logLineAux(fdLog, str);
+
+    strcat(str, "ENTERED ");
+    strcat(str, dirName);
+    strcat(str, "\n");
+    write(fdLog, str, strlen(str));
 }
 
 //-------------------------
 
 void addSignalToLog(int fdLog, char* sigName) {
 
-    write(fdLog, "SIGNAL ", 7);
-    write(fdLog, sigName, strlen(sigName));
-    write(fdLog, "\n", 1);
+    char str[MAX_SIZE];
+    logLineAux(fdLog, str);
+
+    strcat(str, "SIGNAL ");
+    strcat(str, sigName);
+    strcat(str, "\n");
+    write(fdLog, str, strlen(str));
 }
