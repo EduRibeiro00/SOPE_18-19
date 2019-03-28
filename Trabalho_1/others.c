@@ -26,11 +26,3 @@ const char* firstCharAfterSpace(const char* input) {
    starting++;
    return starting;
  }
-
-//-------------------------
-
-clock_t extractTime() {
-
-  struct tms tm;
-  return times(&tm);
-}

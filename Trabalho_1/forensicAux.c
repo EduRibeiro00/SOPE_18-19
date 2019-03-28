@@ -11,8 +11,7 @@
 
 #define MAX_SIZE    510
 
-clock_t startTime; //initial starting time of the main process
-long ticksPerSecond; //number of clock ticks per second
+struct timeval startTime; //initial starting time of the main process
 
 //-------------------------
 
@@ -99,13 +98,20 @@ int checkFileType(char* name){
 
 void logLineAux(int fdLog, char* str) {
 
-    struct tms tm;
-    clock_t actualTime = times(&tm);
-    double timeValue = (double) (actualTime - startTime) * 1000 / ticksPerSecond; //gets the time in milisseconds
+    struct timeval currentTime;
+    if(gettimeofday(&currentTime, NULL) != 0) {  //extracts the current time
+        fprintf(stderr, "Time extraction failed!");
+        exit(1);
+    }
 
-    sprintf(str, "%.2f - %8d - ", timeValue, getpid());
+    double time_taken; 
+  
+    //gets the time in milisseconds
+    time_taken = (currentTime.tv_sec - startTime.tv_sec) * 1e6; 
+    time_taken = (time_taken + (currentTime.tv_usec - startTime.tv_usec)) * 1e-3;
+
+    sprintf(str, "%.2f - %8d - ", time_taken, getpid());
 }
-
 
 //-------------------------
 
@@ -132,7 +138,7 @@ void addFileToLog(int fdLog, char* fileName) {
     char str[MAX_SIZE];
     logLineAux(fdLog, str);
 
-    strcat(str, "ANALIZED ");
+    strcat(str, "ANALYZED ");
     strcat(str, fileName);
     strcat(str, "\n");
     write(fdLog, str, strlen(str));

@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/times.h>
+#include <sys/time.h> 
 #include <sys/wait.h>
 #include <dirent.h>
 #include <errno.h>
@@ -340,7 +341,10 @@ void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog
 
 int main(int argc, char* argv[], char* envp[]) {
 
-    startTime = extractTime(); //extracts the starting time
+    if(gettimeofday(&startTime, NULL) != 0) { //extracts the initial time
+        fprintf(stderr, "Time extraction failed!");
+        exit(1);
+    }
 
     printf("\n");
 
@@ -352,10 +356,10 @@ int main(int argc, char* argv[], char* envp[]) {
 
     extractOptions(boolArray, argc, argv, &fdOut, &fdLog);
 
-    if(boolArray[LOG]) {
-        ticksPerSecond = sysconf(_SC_CLK_TCK); //extracts the number of ticks per second
+    if(boolArray[LOG])
         addCommandToLog(fdLog, argv, argc); //adds the command to the log file
-    }
+
+
 
     char* inputName = argv[argc - 1]; //name of the file or directory
 
