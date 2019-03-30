@@ -8,9 +8,24 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
+#include <signal.h> 
+
+#define REC         0
+#define MD5         1
+#define SHA1        2
+#define SHA256      3
+#define OUT         4
+#define LOG         5
+#define NUM_OPTIONS 6
 
 #define MAX_SIZE    510
 
+//global variables:
+
+DIR* dir; //pointer to the current directory that is being analyzed (if any)
+bool boolArray[NUM_OPTIONS]; //array containing different values concerning the options given by the command
+int fdOut; //descriptor of the output file (if there is any)
+int fdLog; //descriptor of the log file (if there is any)
 struct timeval startTime; //initial starting time of the main process
 
 //-------------------------
@@ -168,4 +183,88 @@ void addSignalToLog(int fdLog, char* sigName) {
     strcat(str, sigName);
     strcat(str, "\n");
     write(fdLog, str, strlen(str));
+}
+
+//-------------------------
+
+//when the user presses CTRL+C
+void sigintHandler(int signo) {
+
+    if(dir != NULL)
+        if(closedir(dir) != 0) {
+        perror("closedir");
+        exit(4);
+    }
+
+    if(boolArray[OUT])
+        if(close(fdOut) == -1){
+            perror("close");
+            exit(5);
+        }
+
+    if(boolArray[LOG])
+        if(close(fdLog) == -1){
+            perror("close");
+            exit(5);
+        }
+
+    exit(7); //exit code for when the program exits because of SIGINT
+}
+
+//-------------------------
+
+void blocksigint() {
+
+    sigset_t mask;
+    if(sigemptyset(&mask) != 0) {
+        perror("sigemptyset");
+        exit(6);
+    }
+    if(sigaddset(&mask, SIGINT) != 0) {
+        perror("sigaddset");
+        exit(6);
+    }
+    if(sigprocmask(SIG_BLOCK, &mask, NULL) != 0) {
+        perror("sigprocmask");
+        exit(6);
+    }
+}
+
+//-------------------------
+
+void unblocksigint() {
+
+    sigset_t mask;
+    if(sigemptyset(&mask) != 0) {
+        perror("sigemptyset");
+        exit(6);
+    }
+    if(sigaddset(&mask, SIGINT) != 0) {
+        perror("sigaddset");
+        exit(6);
+    }
+    if(sigprocmask(SIG_UNBLOCK, &mask, NULL) != 0) {
+        perror("sigprocmask");
+        exit(6);
+    }
+}
+
+//-------------------------
+
+void equipHandlers() {
+
+    struct sigaction action;
+    action.sa_handler = sigintHandler;
+    if(sigemptyset(&action.sa_mask) != 0) {
+        perror("sigemptyset");
+        exit(6);
+    }
+    action.sa_flags = 0;
+
+    if(sigaction(SIGINT, &action, NULL) != 0) {
+        perror("sigaction");
+        exit(6);
+    }
+
+    //depois, acrescentar os outros handlers
 }

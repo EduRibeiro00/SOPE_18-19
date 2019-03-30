@@ -7,7 +7,8 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <string.h> 
+#include <string.h>
+#include <signal.h> 
 
 void incUsage(){
     printf("Illegal use/number of arguments\n");

@@ -12,21 +12,15 @@
 #include <fcntl.h>
 #include <string.h>
 #include <time.h>
+#include <signal.h> 
 
 #include "others.c"
 #include "forensicAux.c"
 
-#define REC         0
-#define MD5         1
-#define SHA1        2
-#define SHA256      3
-#define OUT         4
-#define LOG         5
-#define NUM_OPTIONS 6
+void analiseFile(char* file) {
 
-#define MAX_SIZE        510
+    blocksigint(); //blocks SIGINT while analyzing a file
 
-void analiseFile(bool array[], char* file, int fdOut, int fdLog) {
 
     struct stat stat_entry;
     char outputString[1000]; //string that will have all the information in the end, and that is going to be printed
@@ -68,19 +62,19 @@ void analiseFile(bool array[], char* file, int fdOut, int fdLog) {
         strcat(outputString, buffer); //appends file modification date
 
 
-        if(array[MD5]){ //if md5 option selected
+        if(boolArray[MD5]){ //if md5 option selected
             commandToString(buffer, MAX_SIZE, "md5sum", file); //calls the "md5" command, and extracts its result
             strcat(outputString, ",");
             strcat(outputString, strtok(buffer, " ")); //apends md5 hash code
         }
 
-        if(array[SHA1]){ //if sha1 option selected
+        if(boolArray[SHA1]){ //if sha1 option selected
             commandToString(buffer, MAX_SIZE, "sha1sum", file); //calls the "sha1" command, and extracts its result
             strcat(outputString, ",");
             strcat(outputString, strtok(buffer, " ")); //apends sha1 hash code
         }
 
-        if(array[SHA256]){ //if sha256 option selected
+        if(boolArray[SHA256]){ //if sha256 option selected
             commandToString(buffer, MAX_SIZE, "sha256sum", file); //calls the "sha256" command, and extracts its result
             strcat(outputString, ",");
             strcat(outputString, strtok(buffer, " ")); //apends sha256 hash code
@@ -89,17 +83,20 @@ void analiseFile(bool array[], char* file, int fdOut, int fdLog) {
         strcat(outputString, "\n");
         write(fdOut, outputString, strlen(outputString)); //writes the output
 
-        if(array[LOG])
+        if(boolArray[LOG])
             addFileToLog(fdLog, file); //add file name to the log file
     }
+
+
+
+    unblocksigint(); //operation is over; unblocks sigint
 
 }
 
 //-------------------------
 
-void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut, int fdLog){
+void analiseDir(char* subDir, char* baseDir){
 
-    DIR* dir;
     struct dirent* dentry;
 
     char directory[MAX_SIZE];
@@ -115,11 +112,11 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut, int fdLog)
         exit(4);
     }
 
-    if(array[LOG])
+    if(boolArray[LOG])
         addDirToLog(fdLog, directory); //add directory name to the log file
 
 
-    if(array[REC]) {
+    if(boolArray[REC]) {
 
         //search for subdirectories
         while((dentry = readdir(dir)) != NULL){
@@ -146,7 +143,7 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut, int fdLog)
 
                     strcat(subDir, dentry->d_name);
 
-                    analiseDir(array, subDir, baseDir, fdOut, fdLog); //calls recursively the program, but on the subdirectory
+                    analiseDir(subDir, baseDir); //calls recursively the program, but on the subdirectory
                     exit(0);
                 }
             }
@@ -169,7 +166,7 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut, int fdLog)
                 sprintf(name, "%s/%s", subDir, dentry->d_name);
             else sprintf(name, "%s", dentry->d_name);
 
-            analiseFile(array, name, fdOut, fdLog); //analise it (only if it is regular)
+            analiseFile(name); //analise it (only if it is regular)
         }
 
         //wait for children, and "release" them
@@ -190,7 +187,7 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut, int fdLog)
         }
 
         while((dentry = readdir(dir)) != NULL){ //for every file contained in the directory...
-            analiseFile(array, dentry->d_name, fdOut, fdLog); //analise it (only if it is regular)  
+            analiseFile(dentry->d_name); //analise it (only if it is regular)  
         }
     }
 
@@ -198,23 +195,24 @@ void analiseDir(bool array[], char* subDir, char* baseDir, int fdOut, int fdLog)
         perror("closedir");
         exit(4);
     }
+    dir = NULL;
     
 }
 
 //-------------------------
 
-void extractHOptions(bool array[], char* string) {
+void extractHOptions(char* string) {
 
     if(strcmp(string, "md5") == 0){
-        array[MD5] = true;
+        boolArray[MD5] = true;
         return;
     }
     else if(strcmp(string, "sha1") == 0){
-        array[SHA1] = true;
+        boolArray[SHA1] = true;
         return;
     }
     else if(strcmp(string, "sha256") == 0){
-        array[SHA256] = true;
+        boolArray[SHA256] = true;
         return;
     }
 
@@ -228,24 +226,27 @@ void extractHOptions(bool array[], char* string) {
         //tries to extract the different options that are available for -h
 
         if(strcmp(token, "md5") == 0)
-            array[MD5] = true;
+            boolArray[MD5] = true;
         else if(strcmp(token, "sha1") == 0)
-            array[SHA1] = true;
+            boolArray[SHA1] = true;
         else if(strcmp(token, "sha256") == 0)
-            array[SHA256] = true;
+            boolArray[SHA256] = true;
         else
             incUsage();
 
         token = strtok(NULL, comma);
     }
 
-    if(!(array[MD5] || array[SHA1] || array[SHA256]))
+    if(!(boolArray[MD5] || boolArray[SHA1] || boolArray[SHA256]))
         incUsage();
 }
 
 //-------------------------
 
-void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog) {
+void extractOptions(int argc, char* argv[]) {
+
+    blocksigint(); //operation underway: blocks SIGINT while performing this function
+
 
     if(argc == 1) 
         incUsage(); //if no arguments are specified
@@ -255,7 +256,7 @@ void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog
         
 
     for(int i = 0; i < NUM_OPTIONS; i++)
-        array[i] = false;
+        boolArray[i] = false;
 
 
     bool filePresent = false; //in order to point out that the file/directory was specified in the command call
@@ -265,30 +266,30 @@ void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog
                 
         if(strcmp(argv[k], "-r") == 0){ //recursive option
             
-            if(array[REC])
+            if(boolArray[REC])
                 incUsage(); //if it was already activated
             
-            array[REC] = true;
+            boolArray[REC] = true;
     
         }
         else if(strcmp(argv[k], "-h") == 0){ //md5, sha1 and/or sha256 option
 
-            if(array[MD5] || array[SHA1] || array[SHA256])
+            if(boolArray[MD5] || boolArray[SHA1] || boolArray[SHA256])
                 incUsage(); //if it was already activated
 
             char string[MAX_SIZE];
             strcpy(string, argv[k + 1]);
 
-            extractHOptions(array, string);
+            extractHOptions(string);
             k++; //skips the next argument, which is part of the -h flag specification
 
         }
         else if(strcmp(argv[k], "-o") == 0){ //output option
 
-            if(array[OUT])
+            if(boolArray[OUT])
                 incUsage(); //if it was already activated
 
-            array[OUT] = true;
+            boolArray[OUT] = true;
 
             if((!strcmp(argv[k + 1], "-r")) || (!strcmp(argv[k + 1], "-v")) || (!strcmp(argv[k + 1], "-o")) || (!strcmp(argv[k + 1], "-h")))
                 incUsage(); //if next argument is a flag
@@ -299,10 +300,10 @@ void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog
         }
         else if(strcmp(argv[k], "-v") == 0){ //log file option
             
-            if(array[LOG])
+            if(boolArray[LOG])
                 incUsage(); //if it was already activated
 
-            array[LOG] = true;
+            boolArray[LOG] = true;
 
             if(getenv("LOGFILENAME") == NULL){
                 perror("LOGFILENAME");
@@ -322,19 +323,22 @@ void extractOptions(bool array[], int argc, char* argv[], int *fdOut, int *fdLog
     if(!filePresent)
         incUsage();
 
-    if(array[OUT]){
-        if((*fdOut = open(fileOut, O_WRONLY | O_CREAT | O_TRUNC, 0644)) == -1){
+    if(boolArray[OUT]){
+        if((fdOut = open(fileOut, O_WRONLY | O_CREAT | O_TRUNC, 0644)) == -1){
             perror(fileOut);
             exit(2);
         }
     }
-    else *fdOut = STDOUT_FILENO;
+    else fdOut = STDOUT_FILENO;
 
-    if(array[LOG])
-        if((*fdLog = open(fileLog, O_WRONLY | O_CREAT | O_APPEND, 0644)) == -1){
+    if(boolArray[LOG])
+        if((fdLog = open(fileLog, O_WRONLY | O_CREAT | O_APPEND, 0644)) == -1){
             perror(fileLog);
             exit(2);
         }
+
+
+    unblocksigint(); //unblocks sigint
 }
 
 //-------------------------
@@ -346,15 +350,16 @@ int main(int argc, char* argv[], char* envp[]) {
         exit(1);
     }
 
-    printf("\n");
+    equipHandlers(); //equips all the signal handlers that are necessary
 
-    bool boolArray[NUM_OPTIONS]; //array to save the different program options
-    int fdOut, fdLog;
+
+
+    printf("\n");
     
     char subDir[MAX_SIZE];
     subDir[0] = '\0';
 
-    extractOptions(boolArray, argc, argv, &fdOut, &fdLog);
+    extractOptions(argc, argv);
 
     if(boolArray[LOG])
         addCommandToLog(fdLog, argv, argc); //adds the command to the log file
@@ -367,11 +372,11 @@ int main(int argc, char* argv[], char* envp[]) {
     switch(checkFileType(inputName)){
 
         case 1: //regular file
-            analiseFile(boolArray, inputName, fdOut, fdLog);            
+            analiseFile(inputName);            
             break;
 
         case 2: //directory
-            analiseDir(boolArray, subDir, inputName, fdOut, fdLog);      
+            analiseDir(subDir, inputName);      
             break;
 
         default: //other (no output)
