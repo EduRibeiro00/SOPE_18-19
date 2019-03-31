@@ -306,7 +306,7 @@ void extractOptions(int argc, char* argv[]) {
             boolArray[LOG] = true;
 
             if(getenv("LOGFILENAME") == NULL){
-                perror("LOGFILENAME");
+                fprintf(stderr, "LOGFILENAME is not defined!\n\n");
                 exit(2);
             }
 
