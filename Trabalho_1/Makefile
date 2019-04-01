@@ -1,4 +1,25 @@
-forensic: forensic.o
-	cc forensic.o -o forensic
-forensic.o: forensic.c forensicAux.c others.c
-	cc -c forensic.c forensicAux.c others.c
+CC=gcc
+CFLAGS=-Wall -Wextra -pedantic
+TARGETS = forensic
+
+define make_target
+$(1): $(1).o
+	$(CC) $(CFLAGS) $$^ -o $$@
+endef
+
+.PHONY: all clean
+all: $(TARGETS)
+
+ifdef DEV_INFO
+DEV_FLAGS = -save-temps
+endif
+
+$(foreach TARGET,$(TARGETS),$(eval $(call make_target,$(TARGET))))
+
+%.o: %.c
+	$(CC) $(CFLAGS) $(DEV_FLAGS) -MMD -c $< -o $@
+	
+clean:
+	rm -f $(TARGETS) *.o *.d *.i *.s
+	
+-include $(TARGETS:=.d)

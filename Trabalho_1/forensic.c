@@ -351,8 +351,6 @@ void extractOptions(int argc, char* argv[]) {
 
 int main(int argc, char* argv[], char* envp[]) {
 
-    parentPid = getpid();
-
     if(gettimeofday(&startTime, NULL) != 0) { // extracts the initial time
         fprintf(stderr, "Time extraction failed!");
         exit(1);

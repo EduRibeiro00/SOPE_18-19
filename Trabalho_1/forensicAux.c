@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <signal.h> 
+#include <time.h>
 
 #define REC         0
 #define MD5         1
@@ -264,6 +265,9 @@ void sigusr1Handler(int signo) {
     numDirs += 1;
     printf("New directory: ");
     printf("%d/%d directories/files at this time.\n", numDirs, numFiles);
+    if (boolArray[LOG])
+        if (signo == SIGUSR1)
+            addSignalToLog(fdLog, "SIGUSR1");
 
 }
 
@@ -272,6 +276,9 @@ void sigusr2Handler(int signo) {
     numFiles += 1;
     printf("New file: ");
     printf("%d/%d directories/files at this time.\n", numDirs, numFiles);
+    if (boolArray[LOG])
+        if (signo == SIGUSR2)
+            addSignalToLog(fdLog, "SIGUSR2");
 
 }
 
