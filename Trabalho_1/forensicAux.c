@@ -20,15 +20,17 @@
 
 #define MAX_SIZE    510
 
-//global variables:
+// global variables:
 
-DIR* dir; //pointer to the current directory that is being analyzed (if any)
-bool boolArray[NUM_OPTIONS]; //array containing different values concerning the options given by the command
-int fdOut; //descriptor of the output file (if there is any)
-int fdLog; //descriptor of the log file (if there is any)
-struct timeval startTime; //initial starting time of the main process
+DIR* dir; // pointer to the current directory that is being analyzed (if any)
+bool boolArray[NUM_OPTIONS]; // array containing different values concerning the options given by the command
+int fdOut; // descriptor of the output file (if there is any)
+int fdLog; // descriptor of the log file (if there is any)
+struct timeval startTime; // initial starting time of the main process
+int numDirs;
+int numFiles;
 
-//-------------------------
+// -------------------------
 
 void commandToString(char* result, int max_size, char* command, char* file){
 
@@ -39,17 +41,21 @@ void commandToString(char* result, int max_size, char* command, char* file){
         strcat(pipeCommand, " ");
         strcat(pipeCommand, file);
 
-        if((fileOut = popen(pipeCommand, "r")) == NULL){ //uses a pipe in order to get the output of the command
+        if((fileOut = popen(pipeCommand, "r")) == NULL){ // uses a pipe in order to get the output of the command
             fprintf(stderr, "Popen error!\n");
             exit(3);
         }
 
-        if(fgets(result, max_size, fileOut) == NULL){ //extracts the result of the command from the file pointer
+        // execlp("file", "file", file, NULL);
+
+        if(fgets(result, max_size, fileOut) == NULL){ // extracts the result of the command from the file pointer
+            // printf("O QUE CAUSOU O ERRO: %s\n", pipeCommand);
             fprintf(stderr, "Error with fgets!\n");
+            perror("fgets");
             exit(3);
         }
 
-        result[strlen(result) - 1] = '\0'; //gets rid of the newline
+        result[strlen(result) - 1] = '\0'; // gets rid of the newline
 
         if(pclose(fileOut) != 0){
             fprintf(stderr, "Pclose error!\n");
@@ -57,33 +63,33 @@ void commandToString(char* result, int max_size, char* command, char* file){
         }
 }
 
-//-------------------------
+// -------------------------
 
 void getFileAcess(char* result, int size, mode_t mode){
 
     memset(result, 0, size);
     bool flag = false;
 
-    if(mode & S_IRUSR){ //user read access
+    if(mode & S_IRUSR){ // user read access
         strcat(result, "r");
         flag = true;
     }
 
-    if(mode & S_IWUSR){ //user write access
+    if(mode & S_IWUSR){ // user write access
         strcat(result, "w");
         flag = true;
     }
 
-    if(mode & S_IXUSR){ //user execute access
+    if(mode & S_IXUSR){ // user execute access
         strcat(result, "x");
         flag = true;
     }
 
     if(!flag)
-        strcat(result, "-"); //if no permissions were identified...
+        strcat(result, "-"); // if no permissions were identified...
 }
 
-//-------------------------
+// -------------------------
 
 /**
  * return:
@@ -109,26 +115,26 @@ int checkFileType(char* name){
     return 0;
 }
 
-//-------------------------
+// -------------------------
 
 void logLineAux(int fdLog, char* str) {
 
     struct timeval currentTime;
-    if(gettimeofday(&currentTime, NULL) != 0) {  //extracts the current time
+    if(gettimeofday(&currentTime, NULL) != 0) {  // extracts the current time
         fprintf(stderr, "Time extraction failed!");
         exit(1);
     }
 
     double time_taken; 
   
-    //gets the time in milisseconds
+    // gets the time in milisseconds
     time_taken = (currentTime.tv_sec - startTime.tv_sec) * 1e6; 
     time_taken = (time_taken + (currentTime.tv_usec - startTime.tv_usec)) * 1e-3;
 
     sprintf(str, "%.2f - %8d - ", time_taken, getpid());
 }
 
-//-------------------------
+// -------------------------
 
 void addCommandToLog(int fdLog, char* argv[], int argc) {
 
@@ -146,7 +152,7 @@ void addCommandToLog(int fdLog, char* argv[], int argc) {
     write(fdLog, str, strlen(str));
 }
 
-//-------------------------
+// -------------------------
 
 void addFileToLog(int fdLog, char* fileName) {
 
@@ -159,7 +165,7 @@ void addFileToLog(int fdLog, char* fileName) {
     write(fdLog, str, strlen(str));
 }
 
-//-------------------------
+// -------------------------
 
 void addDirToLog(int fdLog, char* dirName) {
     
@@ -172,7 +178,7 @@ void addDirToLog(int fdLog, char* dirName) {
     write(fdLog, str, strlen(str));
 }
 
-//-------------------------
+// -------------------------
 
 void addSignalToLog(int fdLog, char* sigName) {
 
@@ -185,9 +191,9 @@ void addSignalToLog(int fdLog, char* sigName) {
     write(fdLog, str, strlen(str));
 }
 
-//-------------------------
+// -------------------------
 
-//when the user presses CTRL+C
+// when the user presses CTRL+C
 void sigintHandler(int signo) {
 
     if(dir != NULL)
@@ -208,10 +214,10 @@ void sigintHandler(int signo) {
             exit(5);
         }
 
-    exit(7); //exit code for when the program exits because of SIGINT
+    exit(7); // exit code for when the program exits because of SIGINT
 }
 
-//-------------------------
+// -------------------------
 
 void blocksigint() {
 
@@ -228,9 +234,10 @@ void blocksigint() {
         perror("sigprocmask");
         exit(6);
     }
+
 }
 
-//-------------------------
+// -------------------------
 
 void unblocksigint() {
 
@@ -247,24 +254,60 @@ void unblocksigint() {
         perror("sigprocmask");
         exit(6);
     }
+
 }
 
-//-------------------------
+// -------------------------
+
+void sigusr1Handler(int signo) {
+
+    numDirs += 1;
+    printf("New directory: ");
+    printf("%d/%d directories/files at this time.\n", numDirs, numFiles);
+
+}
+
+void sigusr2Handler(int signo) {
+
+    numFiles += 1;
+    printf("New file: ");
+    printf("%d/%d directories/files at this time.\n", numDirs, numFiles);
+
+}
+
+// -------------------------
 
 void equipHandlers() {
 
     struct sigaction action;
-    action.sa_handler = sigintHandler;
     if(sigemptyset(&action.sa_mask) != 0) {
         perror("sigemptyset");
         exit(6);
     }
     action.sa_flags = 0;
+    action.sa_flags |= SA_RESTART;
 
+    action.sa_handler = sigintHandler;
     if(sigaction(SIGINT, &action, NULL) != 0) {
         perror("sigaction");
         exit(6);
     }
 
-    //depois, acrescentar os outros handlers
+    action.sa_handler = sigusr1Handler;
+    if(sigaction(SIGUSR1, &action, NULL) < 0)
+    {
+        perror("sigusr1");
+        exit(6);
+    }
+
+    action.sa_handler = sigusr2Handler;
+    if(sigaction(SIGUSR2, &action, NULL) < 0)
+    {
+        perror("sigusr2");
+        exit(6);
+    }
+
+    numDirs = 0;
+    numFiles = 0;
+
 }

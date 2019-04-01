@@ -17,13 +17,14 @@
 #include "others.c"
 #include "forensicAux.c"
 
+pid_t parentPid;
+
 void analiseFile(char* file) {
 
-    blocksigint(); //blocks SIGINT while analyzing a file
-
+    blocksigint(); // blocks SIGINT while analyzing a file
 
     struct stat stat_entry;
-    char outputString[1000]; //string that will have all the information in the end, and that is going to be printed
+    char outputString[1000]; // string that will have all the information in the end, and that is going to be printed
     outputString[0] = '\0';
 
     if(lstat(file, &stat_entry) == -1){
@@ -31,71 +32,76 @@ void analiseFile(char* file) {
         exit(3);
     }
 
-    if(S_ISREG(stat_entry.st_mode)){ //if regular file
+    if(S_ISREG(stat_entry.st_mode)){ // if regular file
 
-        strcat(outputString, file); //appends file name
+        if (boolArray[OUT])
+            kill(parentPid, SIGUSR2);
 
-        char buffer[MAX_SIZE];
+        strcat(outputString, file); // appends file name
 
-        commandToString(buffer, MAX_SIZE, "file", file); //calls the "file" command, and extracts its result
+        char buffer[MAX_SIZE] = "";
+        commandToString(buffer, MAX_SIZE, "file", file); // calls the "file" command, and extracts its result
         strcat(outputString, ",");
-        strcat(outputString, firstCharAfterSpace(buffer)); //appends file type
+        strcat(outputString, firstCharAfterSpace(buffer)); // appends file type
 
         sprintf(buffer, "%d", (int) stat_entry.st_size);
         strcat(outputString, ",");
-        strcat(outputString, buffer); //appends file size
+        strcat(outputString, buffer); // appends file size
 
         getFileAcess(buffer, MAX_SIZE, stat_entry.st_mode);
         strcat(outputString, ",");
-        strcat(outputString, buffer); //appends file access
+        strcat(outputString, buffer); // appends file access
 
         struct tm *ts;
 
         ts = localtime(&stat_entry.st_atime);
 	    strftime(buffer, MAX_SIZE, "%Y-%m-%dT%H:%M:%S", ts);
 	    strcat(outputString, ",");
-        strcat(outputString, buffer); //appends file access date
+        strcat(outputString, buffer); // appends file access date
 
 	    ts = localtime(&stat_entry.st_mtime);
 	    strftime(buffer, MAX_SIZE, "%Y-%m-%dT%H:%M:%S", ts);
 	    strcat(outputString, ",");
-        strcat(outputString, buffer); //appends file modification date
+        strcat(outputString, buffer); // appends file modification date
 
 
-        if(boolArray[MD5]){ //if md5 option selected
-            commandToString(buffer, MAX_SIZE, "md5sum", file); //calls the "md5" command, and extracts its result
+        if(boolArray[MD5]){ // if md5 option selected
+            commandToString(buffer, MAX_SIZE, "md5sum", file); // calls the "md5" command, and extracts its result
             strcat(outputString, ",");
-            strcat(outputString, strtok(buffer, " ")); //apends md5 hash code
+            strcat(outputString, strtok(buffer, " ")); // apends md5 hash code
         }
 
-        if(boolArray[SHA1]){ //if sha1 option selected
-            commandToString(buffer, MAX_SIZE, "sha1sum", file); //calls the "sha1" command, and extracts its result
+        if(boolArray[SHA1]){ // if sha1 option selected
+            commandToString(buffer, MAX_SIZE, "sha1sum", file); // calls the "sha1" command, and extracts its result
             strcat(outputString, ",");
-            strcat(outputString, strtok(buffer, " ")); //apends sha1 hash code
+            strcat(outputString, strtok(buffer, " ")); // apends sha1 hash code
         }
 
-        if(boolArray[SHA256]){ //if sha256 option selected
-            commandToString(buffer, MAX_SIZE, "sha256sum", file); //calls the "sha256" command, and extracts its result
+        if(boolArray[SHA256]){ // if sha256 option selected
+            commandToString(buffer, MAX_SIZE, "sha256sum", file); // calls the "sha256" command, and extracts its result
             strcat(outputString, ",");
-            strcat(outputString, strtok(buffer, " ")); //apends sha256 hash code
+            strcat(outputString, strtok(buffer, " ")); // apends sha256 hash code
         }
 
         strcat(outputString, "\n");
-        write(fdOut, outputString, strlen(outputString)); //writes the output
+        write(fdOut, outputString, strlen(outputString)); // writes the output
 
         if(boolArray[LOG])
-            addFileToLog(fdLog, file); //add file name to the log file
+            addFileToLog(fdLog, file); // add file name to the log file
     }
 
 
 
-    unblocksigint(); //operation is over; unblocks sigint
+    unblocksigint(); // operation is over; unblocks sigint
 
 }
 
-//-------------------------
+// -------------------------
 
 void analiseDir(char* subDir, char* baseDir){
+
+    if (boolArray[OUT])
+        kill(parentPid, SIGUSR1);
 
     struct dirent* dentry;
 
@@ -107,69 +113,69 @@ void analiseDir(char* subDir, char* baseDir){
         strcat(directory, subDir);
     }
 
-    if((dir = opendir(directory)) == NULL){ //open the directory
+    if((dir = opendir(directory)) == NULL){ // open the directory
         perror(directory);
         exit(4);
     }
 
     if(boolArray[LOG])
-        addDirToLog(fdLog, directory); //add directory name to the log file
-
+        addDirToLog(fdLog, directory); // add directory name to the log file
 
     if(boolArray[REC]) {
 
-        //search for subdirectories
+        // search for subdirectories
         while((dentry = readdir(dir)) != NULL){
 
-            //only want to search for subdirectories
+            // only want to search for subdirectories
             if((strcmp(dentry->d_name, ".") == 0) || (strcmp(dentry->d_name, "..") == 0))
                 continue;
 
             char newDir[MAX_SIZE];
             sprintf(newDir, "%s/%s", directory, dentry->d_name);
 
-            if(checkFileType(newDir) == 2){ //if it is a directory
+            if(checkFileType(newDir) == 2){ // if it is a directory
 
                 pid_t pid;
 
                 if((pid = fork()) == -1) {
                     perror("fork");
                     exit(4);
-                }
-                else if(pid == 0) { //child process
+                }                
+                else if(pid == 0) { // child process
 
                     if(strlen(subDir) != 0)
                         strcat(subDir, "/");
 
                     strcat(subDir, dentry->d_name);
 
-                    analiseDir(subDir, baseDir); //calls recursively the program, but on the subdirectory
+                    analiseDir(subDir, baseDir); // calls recursively the program, but on the subdirectory
                     exit(0);
                 }
             }
         }
 
-        rewinddir(dir); //resets the directory, so we can iterate through it again
+        rewinddir(dir); // resets the directory, so we can iterate through it again
         
 
-        if(chdir(baseDir) != 0){ //change to the main directory
+        if(chdir(baseDir) != 0){ // change to the main directory
             perror("chdir");
             exit(4);
         }
 
         char name[MAX_SIZE];
 
-        //now, searching only for regular files
+        // now, searching only for regular files
         while((dentry = readdir(dir)) != NULL) {
             
             if(strlen(subDir) != 0)
                 sprintf(name, "%s/%s", subDir, dentry->d_name);
             else sprintf(name, "%s", dentry->d_name);
 
-            analiseFile(name); //analise it (only if it is regular)
+
+            analiseFile(name); // analise it (only if it is regular)
         }
 
-        //wait for children, and "release" them
+        // wait for children, and "release" them
         int status;
         while(wait(&status) != -1) {
             if(WEXITSTATUS(status) != 0) {
@@ -181,13 +187,13 @@ void analiseDir(char* subDir, char* baseDir){
     }
     else {
 
-        if(chdir(directory) != 0){ //change to that directory
+        if(chdir(directory) != 0){ // change to that directory
             perror("chdir");
             exit(4);
         }
 
-        while((dentry = readdir(dir)) != NULL){ //for every file contained in the directory...
-            analiseFile(dentry->d_name); //analise it (only if it is regular)  
+        while((dentry = readdir(dir)) != NULL){ // for every file contained in the directory...                
+            analiseFile(dentry->d_name); // analise it (only if it is regular)  
         }
     }
 
@@ -199,7 +205,7 @@ void analiseDir(char* subDir, char* baseDir){
     
 }
 
-//-------------------------
+// -------------------------
 
 void extractHOptions(char* string) {
 
@@ -223,7 +229,7 @@ void extractHOptions(char* string) {
 
     while(token != NULL){
 
-        //tries to extract the different options that are available for -h
+        // tries to extract the different options that are available for -h
 
         if(strcmp(token, "md5") == 0)
             boolArray[MD5] = true;
@@ -241,67 +247,67 @@ void extractHOptions(char* string) {
         incUsage();
 }
 
-//-------------------------
+// -------------------------
 
 void extractOptions(int argc, char* argv[]) {
 
-    blocksigint(); //operation underway: blocks SIGINT while performing this function
+    blocksigint(); // operation underway: blocks SIGINT while performing this function
 
 
     if(argc == 1) 
-        incUsage(); //if no arguments are specified
+        incUsage(); // if no arguments are specified
 
     if((!strcmp(argv[argc - 1], "-r")) || (!strcmp(argv[argc - 1], "-v")) || (!strcmp(argv[argc - 1], "-o")) || (!strcmp(argv[argc - 1], "-h")))
-        incUsage(); //if last argument is a flag
+        incUsage(); // if last argument is a flag
         
 
     for(int i = 0; i < NUM_OPTIONS; i++)
         boolArray[i] = false;
 
 
-    bool filePresent = false; //in order to point out that the file/directory was specified in the command call
-    char* fileOut, *fileLog; //names of the files to be used for output and log (if any)
+    bool filePresent = false; // in order to point out that the file/directory was specified in the command call
+    char* fileOut, *fileLog; // names of the files to be used for output and log (if any)
 
     for(int k = 1; k < argc; k++){
                 
-        if(strcmp(argv[k], "-r") == 0){ //recursive option
+        if(strcmp(argv[k], "-r") == 0){ // recursive option
             
             if(boolArray[REC])
-                incUsage(); //if it was already activated
+                incUsage(); // if it was already activated
             
             boolArray[REC] = true;
     
         }
-        else if(strcmp(argv[k], "-h") == 0){ //md5, sha1 and/or sha256 option
+        else if(strcmp(argv[k], "-h") == 0){ // md5, sha1 and/or sha256 option
 
             if(boolArray[MD5] || boolArray[SHA1] || boolArray[SHA256])
-                incUsage(); //if it was already activated
+                incUsage(); // if it was already activated
 
             char string[MAX_SIZE];
             strcpy(string, argv[k + 1]);
 
             extractHOptions(string);
-            k++; //skips the next argument, which is part of the -h flag specification
+            k++; // skips the next argument, which is part of the -h flag specification
 
         }
-        else if(strcmp(argv[k], "-o") == 0){ //output option
+        else if(strcmp(argv[k], "-o") == 0){ // output option
 
             if(boolArray[OUT])
-                incUsage(); //if it was already activated
+                incUsage(); // if it was already activated
 
             boolArray[OUT] = true;
 
             if((!strcmp(argv[k + 1], "-r")) || (!strcmp(argv[k + 1], "-v")) || (!strcmp(argv[k + 1], "-o")) || (!strcmp(argv[k + 1], "-h")))
-                incUsage(); //if next argument is a flag
+                incUsage(); // if next argument is a flag
         
-            fileOut = argv[k + 1]; //saves the file name
-            k++; //skips the next argument, because it is the name of the output file
+            fileOut = argv[k + 1]; // saves the file name
+            k++; // skips the next argument, because it is the name of the output file
         
         }
-        else if(strcmp(argv[k], "-v") == 0){ //log file option
+        else if(strcmp(argv[k], "-v") == 0){ // log file option
             
             if(boolArray[LOG])
-                incUsage(); //if it was already activated
+                incUsage(); // if it was already activated
 
             boolArray[LOG] = true;
 
@@ -310,13 +316,13 @@ void extractOptions(int argc, char* argv[]) {
                 exit(2);
             }
 
-            fileLog = getenv("LOGFILENAME"); //saves the file name
+            fileLog = getenv("LOGFILENAME"); // saves the file name
 
         }
-        else if(k != argc - 1) //if it is not a flag, and if it is not the last argument, invalid option
+        else if(k != argc - 1) // if it is not a flag, and if it is not the last argument, invalid option
             incUsage();
         
-        else filePresent = true; //last argument; its the name of the file 
+        else filePresent = true; // last argument; its the name of the file 
         
     }
 
@@ -338,21 +344,23 @@ void extractOptions(int argc, char* argv[]) {
         }
 
 
-    unblocksigint(); //unblocks sigint
+    unblocksigint(); // unblocks sigint
 }
 
-//-------------------------
+// -------------------------
 
 int main(int argc, char* argv[], char* envp[]) {
 
-    if(gettimeofday(&startTime, NULL) != 0) { //extracts the initial time
+    parentPid = getpid();
+
+    if(gettimeofday(&startTime, NULL) != 0) { // extracts the initial time
         fprintf(stderr, "Time extraction failed!");
         exit(1);
     }
 
-    equipHandlers(); //equips all the signal handlers that are necessary
+    equipHandlers(); // equips all the signal handlers that are necessary
 
-
+    parentPid = getpid();
 
     printf("\n");
     
@@ -362,24 +370,24 @@ int main(int argc, char* argv[], char* envp[]) {
     extractOptions(argc, argv);
 
     if(boolArray[LOG])
-        addCommandToLog(fdLog, argv, argc); //adds the command to the log file
+        addCommandToLog(fdLog, argv, argc); // adds the command to the log file
 
 
 
-    char* inputName = argv[argc - 1]; //name of the file or directory
+    char* inputName = argv[argc - 1]; // name of the file or directory
 
-    //checks the type of the file argument passed
+    // checks the type of the file argument passed
     switch(checkFileType(inputName)){
 
-        case 1: //regular file
+        case 1: // regular file
             analiseFile(inputName);            
             break;
 
-        case 2: //directory
+        case 2: // directory
             analiseDir(subDir, inputName);      
             break;
 
-        default: //other (no output)
+        default: // other (no output)
             fprintf(stderr, "Invalid file passed!\n");
             break;
     }
