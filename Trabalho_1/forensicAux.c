@@ -215,8 +215,9 @@ void sigintHandler(int signo) {
                 perror("close");
                 exit(5);
             }
-    }
+    
     exit(7); // exit code for when the program exits because of SIGINT
+    }
 }
 
 // -------------------------
