@@ -30,6 +30,7 @@ int fdLog; // descriptor of the log file (if there is any)
 struct timeval startTime; // initial starting time of the main process
 int numDirs;
 int numFiles;
+pid_t parentPid;
 
 // -------------------------
 
@@ -181,12 +182,25 @@ void addDirToLog(char* dirName) {
 
 // -------------------------
 
-void addSignalToLog(char* sigName) {
+void addSentSignalToLog(char* sigName) {
 
     char str[MAX_SIZE];
     logLineAux(str);
 
-    strcat(str, "SIGNAL ");
+    strcat(str, "SENT SIGNAL ");
+    strcat(str, sigName);
+    strcat(str, "\n");
+    write(fdLog, str, strlen(str));
+}
+
+// -------------------------
+
+void addReceivedSignalToLog(char* sigName) {
+
+    char str[MAX_SIZE];
+    logLineAux(str);
+
+    strcat(str, "RECEIVED SIGNAL ");
     strcat(str, sigName);
     strcat(str, "\n");
     write(fdLog, str, strlen(str));
@@ -198,13 +212,8 @@ void addSignalToLog(char* sigName) {
 void sigintHandler(int signo) {
 
     if (signo == SIGINT) {
-        if(dir != NULL)
-            if(closedir(dir) != 0) {
-            perror("closedir");
-            exit(4);
-        }
 
-        if(boolArray[OUT])
+        if(boolArray[OUT] && fdOut != STDOUT_FILENO)
             if(close(fdOut) == -1){
                 perror("close");
                 exit(5);
@@ -216,7 +225,7 @@ void sigintHandler(int signo) {
                 exit(5);
             }
     
-    exit(7); // exit code for when the program exits because of SIGINT
+        exit(7); // exit code for when the program exits because of SIGINT
     }
 }
 
@@ -264,24 +273,28 @@ void unblocksigint() {
 
 void sigusr1Handler(int signo) {
 
-    numDirs += 1;
-    printf("New directory: ");
-    printf("%d/%d directories/files at this time.\n", numDirs, numFiles);
-    if (boolArray[LOG])
-        if (signo == SIGUSR1)
-            addSignalToLog("SIGUSR1");
+    if(signo == SIGUSR1) {
 
+        if(boolArray[LOG])
+            addReceivedSignalToLog("SIGUSR1");
+
+        numDirs += 1;
+        printf("New directory: ");
+        printf("%d/%d directories/files at this time.\n", numDirs, numFiles);
+    }
 }
+
+// -------------------------
 
 void sigusr2Handler(int signo) {
 
-    numFiles += 1;
-    printf("New file: ");
-    printf("%d/%d directories/files at this time.\n", numDirs, numFiles);
-    if (boolArray[LOG])
-        if (signo == SIGUSR2)
-            addSignalToLog("SIGUSR2");
-
+    if(signo == SIGUSR2) {
+        
+        if(boolArray[LOG])
+            addReceivedSignalToLog("SIGUSR2");
+        
+        numFiles += 1;
+    }
 }
 
 // -------------------------

@@ -17,8 +17,6 @@
 #include "others.c"
 #include "forensicAux.c"
 
-pid_t parentPid;
-
 void analiseFile(char* file) {
 
     blocksigint(); // blocks SIGINT while analyzing a file
@@ -34,8 +32,13 @@ void analiseFile(char* file) {
 
     if(S_ISREG(stat_entry.st_mode)){ // if regular file
 
-        if (boolArray[OUT])
+        if (boolArray[OUT]) {
+
+            if (boolArray[LOG])
+                addSentSignalToLog("SIGUSR2");
+
             kill(parentPid, SIGUSR2);
+        }
 
         strcat(outputString, file); // appends file name
 
@@ -100,8 +103,12 @@ void analiseFile(char* file) {
 
 void analiseDir(char* subDir, char* baseDir){
 
-    if (boolArray[OUT])
+    if (boolArray[OUT]) {
+        if (boolArray[LOG])
+            addSentSignalToLog("SIGUSR1");
+
         kill(parentPid, SIGUSR1);
+    }
 
     struct dirent* dentry;
 
@@ -201,7 +208,6 @@ void analiseDir(char* subDir, char* baseDir){
         perror("closedir");
         exit(4);
     }
-    dir = NULL;
     
 }
 
@@ -249,7 +255,7 @@ void extractHOptions(char* string) {
 
 // -------------------------
 
-void extractOptions(int argc, char* argv[]) {
+void extractOptions(int argc, char* argv[], int* fileOutIndex) {
 
     blocksigint(); // operation underway: blocks SIGINT while performing this function
 
@@ -301,6 +307,7 @@ void extractOptions(int argc, char* argv[]) {
                 incUsage(); // if next argument is a flag
         
             fileOut = argv[k + 1]; // saves the file name
+            *fileOutIndex = k + 1; // saves the index of the file
             k++; // skips the next argument, because it is the name of the output file
         
         }
@@ -365,7 +372,9 @@ int main(int argc, char* argv[]) {
     char subDir[MAX_SIZE];
     subDir[0] = '\0';
 
-    extractOptions(argc, argv);
+    int fileOutIndex = -1;
+
+    extractOptions(argc, argv, &fileOutIndex);
 
     if(boolArray[LOG])
         addCommandToLog(argv, argc); // adds the command to the log file
@@ -387,6 +396,15 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "Invalid file passed!\n");
             break;
     }
+
+    if(boolArray[OUT]) {
+        printf("End: ");
+        printf("%d/%d directories/files processed.\n", numDirs, numFiles);
+        printf("Data saved on file %s.", argv[fileOutIndex]);
+    }
+
+    if(boolArray[LOG])
+        printf("\nExecution records saved on file %s.", getenv("LOGFILENAME"));
 
     if(boolArray[OUT])
         if(close(fdOut) == -1){

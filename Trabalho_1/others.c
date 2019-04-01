@@ -12,7 +12,7 @@
 
 void incUsage(){
     printf("Illegal use/number of arguments\n");
-    printf("Usage: forensic [-r] [-h [md5[,sha1[,sha256]]] [-o <outfile>] [-v] <file|dir>\n");
+    printf("Usage: forensic [-r] [-h [md5[,sha1[,sha256]]] [-o <outfile>] [-v] <file|dir>\n\n");
     exit(1);
 }
 
