@@ -87,7 +87,7 @@ void analiseFile(char* file) {
         write(fdOut, outputString, strlen(outputString)); // writes the output
 
         if(boolArray[LOG])
-            addFileToLog(fdLog, file); // add file name to the log file
+            addFileToLog(file); // add file name to the log file
     }
 
 
@@ -119,7 +119,7 @@ void analiseDir(char* subDir, char* baseDir){
     }
 
     if(boolArray[LOG])
-        addDirToLog(fdLog, directory); // add directory name to the log file
+        addDirToLog(directory); // add directory name to the log file
 
     if(boolArray[REC]) {
 
@@ -368,9 +368,7 @@ int main(int argc, char* argv[]) {
     extractOptions(argc, argv);
 
     if(boolArray[LOG])
-        addCommandToLog(fdLog, argv, argc); // adds the command to the log file
-
-
+        addCommandToLog(argv, argc); // adds the command to the log file
 
     char* inputName = argv[argc - 1]; // name of the file or directory
 

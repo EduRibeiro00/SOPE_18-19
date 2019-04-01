@@ -137,7 +137,7 @@ void logLineAux(char* str) {
 
 // -------------------------
 
-void addCommandToLog(int fdLog, char* argv[], int argc) {
+void addCommandToLog(char* argv[], int argc) {
 
     char str[MAX_SIZE];
     logLineAux(str);
@@ -155,7 +155,7 @@ void addCommandToLog(int fdLog, char* argv[], int argc) {
 
 // -------------------------
 
-void addFileToLog(int fdLog, char* fileName) {
+void addFileToLog(char* fileName) {
 
     char str[MAX_SIZE];
     logLineAux(str);
@@ -168,7 +168,7 @@ void addFileToLog(int fdLog, char* fileName) {
 
 // -------------------------
 
-void addDirToLog(int fdLog, char* dirName) {
+void addDirToLog(char* dirName) {
     
     char str[MAX_SIZE];
     logLineAux(str);
@@ -181,7 +181,7 @@ void addDirToLog(int fdLog, char* dirName) {
 
 // -------------------------
 
-void addSignalToLog(int fdLog, char* sigName) {
+void addSignalToLog(char* sigName) {
 
     char str[MAX_SIZE];
     logLineAux(str);
@@ -203,13 +203,13 @@ void sigintHandler(int signo) {
             perror("closedir");
             exit(4);
         }
-    
+
         if(boolArray[OUT])
             if(close(fdOut) == -1){
                 perror("close");
                 exit(5);
             }
-    
+
         if(boolArray[LOG])
             if(close(fdLog) == -1){
                 perror("close");
@@ -268,7 +268,7 @@ void sigusr1Handler(int signo) {
     printf("%d/%d directories/files at this time.\n", numDirs, numFiles);
     if (boolArray[LOG])
         if (signo == SIGUSR1)
-            addSignalToLog(fdLog, "SIGUSR1");
+            addSignalToLog("SIGUSR1");
 
 }
 
@@ -279,7 +279,7 @@ void sigusr2Handler(int signo) {
     printf("%d/%d directories/files at this time.\n", numDirs, numFiles);
     if (boolArray[LOG])
         if (signo == SIGUSR2)
-            addSignalToLog(fdLog, "SIGUSR2");
+            addSignalToLog("SIGUSR2");
 
 }
 
