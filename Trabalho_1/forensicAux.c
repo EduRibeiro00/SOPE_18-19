@@ -118,7 +118,7 @@ int checkFileType(char* name){
 
 // -------------------------
 
-void logLineAux(int fdLog, char* str) {
+void logLineAux(char* str) {
 
     struct timeval currentTime;
     if(gettimeofday(&currentTime, NULL) != 0) {  // extracts the current time
@@ -140,7 +140,7 @@ void logLineAux(int fdLog, char* str) {
 void addCommandToLog(int fdLog, char* argv[], int argc) {
 
     char str[MAX_SIZE];
-    logLineAux(fdLog, str);
+    logLineAux(str);
 
     strcat(str, "COMMAND");
 
@@ -158,7 +158,7 @@ void addCommandToLog(int fdLog, char* argv[], int argc) {
 void addFileToLog(int fdLog, char* fileName) {
 
     char str[MAX_SIZE];
-    logLineAux(fdLog, str);
+    logLineAux(str);
 
     strcat(str, "ANALYZED ");
     strcat(str, fileName);
@@ -171,7 +171,7 @@ void addFileToLog(int fdLog, char* fileName) {
 void addDirToLog(int fdLog, char* dirName) {
     
     char str[MAX_SIZE];
-    logLineAux(fdLog, str);
+    logLineAux(str);
 
     strcat(str, "ENTERED ");
     strcat(str, dirName);
@@ -184,7 +184,7 @@ void addDirToLog(int fdLog, char* dirName) {
 void addSignalToLog(int fdLog, char* sigName) {
 
     char str[MAX_SIZE];
-    logLineAux(fdLog, str);
+    logLineAux(str);
 
     strcat(str, "SIGNAL ");
     strcat(str, sigName);
@@ -197,24 +197,25 @@ void addSignalToLog(int fdLog, char* sigName) {
 // when the user presses CTRL+C
 void sigintHandler(int signo) {
 
-    if(dir != NULL)
-        if(closedir(dir) != 0) {
-        perror("closedir");
-        exit(4);
+    if (signo == SIGINT) {
+        if(dir != NULL)
+            if(closedir(dir) != 0) {
+            perror("closedir");
+            exit(4);
+        }
+    
+        if(boolArray[OUT])
+            if(close(fdOut) == -1){
+                perror("close");
+                exit(5);
+            }
+    
+        if(boolArray[LOG])
+            if(close(fdLog) == -1){
+                perror("close");
+                exit(5);
+            }
     }
-
-    if(boolArray[OUT])
-        if(close(fdOut) == -1){
-            perror("close");
-            exit(5);
-        }
-
-    if(boolArray[LOG])
-        if(close(fdLog) == -1){
-            perror("close");
-            exit(5);
-        }
-
     exit(7); // exit code for when the program exits because of SIGINT
 }
 
