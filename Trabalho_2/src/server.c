@@ -59,6 +59,43 @@ bool checkPassword(char* password) {
     }
     else if(pid > 0) { // parent
 
-        close(fd1)   
+        close(fd1[READ]);
+        close(fd2[WRITE]);
+
+        // VAI BUSCAR SALT E HASH
+        char* salt = "a12011bdfabf719"; // salt de exemplo
+        char* hash = "7d62e03ec1bedef3d0a8cdd0ba29716e3568025c5b7a3acd51e0fb11cbe306be";
+
+        // concatenates password and salt
+        char value[500];
+        value[0] = '\0';
+        strcat(value, password);
+        strcat(value, salt);
+        int len = strlen(value) + 1;
+
+        // sends it to coprocess
+        if(write(fd1[WRITE], value, len) != len) {
+            perror("Write to pipe");
+            exit(EXIT_FAILURE);
+        }
+
+        // reads the generated hash from the coprocess
+        if((len = read(fd2[READ], value, 500)) < 0) {
+            perror("Read from pipe");
+            exit(EXIT_FAILURE);
+        }
+
+        // if child closed pipe
+        if(len == 0) {
+            fprintf(stderr, "Child closed pipe!");
+            return false;
+        }
+
+        value[len] = '\0';
+
+        return (!strcmp(value, hash));
+    }
+    else { // child
+
     }
 }
