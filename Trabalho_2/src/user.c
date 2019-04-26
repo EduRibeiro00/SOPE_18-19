@@ -18,6 +18,7 @@
 #include "sope.h"
 #include "types.h"
 #include "aux.h"
+#include "user.h"
 
 int main() {
 

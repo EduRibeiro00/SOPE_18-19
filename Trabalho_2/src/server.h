@@ -20,3 +20,9 @@
 #include "sope.h"
 #include "types.h"
 #include "aux.h"
+
+// creates the threads in the beggining
+int createThreads(pthread_t* tids, int numThreads);
+
+// checks if a password that a user send the server is valid
+bool checkPassword(char* password);

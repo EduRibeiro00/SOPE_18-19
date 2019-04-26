@@ -17,6 +17,7 @@
 #include "constants.h"
 #include "sope.h"
 #include "types.h"
+#include "aux.h"
 
 // string tem de ter SALT_LEN + 1 length
 void generateRandomSalt(char* salt) {
@@ -26,9 +27,9 @@ void generateRandomSalt(char* salt) {
         int value;
 
         if(random)
-            value = rand() % 9 + 48;
+            value = rand() % 10 + 48;
         else
-            value = rand() % 5 + 97;
+            value = rand() % 6 + 97;
 
         salt[i] = (char) value;
     }

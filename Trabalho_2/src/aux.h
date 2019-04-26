@@ -20,5 +20,10 @@
 #include "sope.h"
 #include "types.h"
 
+// macros for pipes
+#define READ  0
+#define WRITE 1
+
+
 // string tem de ter SALT_LEN + 1 length
-char* generateRandomSalt();
+void generateRandomSalt(char* salt);
