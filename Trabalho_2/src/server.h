@@ -21,8 +21,17 @@
 #include "types.h"
 #include "aux.h"
 
-// creates the threads in the beggining
-int createThreads(pthread_t* tids, int numThreads);
+// creates the threads in the beginning
+// int createThreads(pthread_t* tids, int numThreads);
 
 // checks if a password that a user send the server is valid
 bool checkPassword(char* password);
+
+// gets bank account from main array; returns NULL if account doesn't exist
+bank_account_t* getBankAccount(uint32_t id);
+
+// returns salt from account; returns false if account doesn't exist
+bool getSaltFromAccount(uint32_t id, char* salt);
+
+// returns hash from account; returns false if account doesn't exist
+bool getHashFromAccount(uint32_t id, char* hash); 
