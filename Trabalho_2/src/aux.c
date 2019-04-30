@@ -39,7 +39,7 @@ void generateRandomSalt(char* salt) {
 
 // ---------------------------------
 
-char* generateHash(char* password, char* salt) {
+void generateHash(char* password, char* salt, char* hashResult) {
 
      int fd1[2], fd2[2];
     pid_t pid;
@@ -61,14 +61,13 @@ char* generateHash(char* password, char* salt) {
         close(fd2[WRITE]);
 
         // concatenates password and salt
-        char value[500];
-        value[0] = '\0';
-        strcat(value, password);
-        strcat(value, salt);
-        int len = strlen(value);
+        hashResult[0] = '\0';
+        strcat(hashResult, password);
+        strcat(hashResult, salt);
+        int len = strlen(hashResult);
 
         // sends it to coprocess
-        if(write(fd1[WRITE], value, len) != len) {
+        if(write(fd1[WRITE], hashResult, len) != len) {
             perror("Write to pipe");
             exit(EXIT_FAILURE);
         }
@@ -76,7 +75,7 @@ char* generateHash(char* password, char* salt) {
         close(fd1[WRITE]);
 
         // reads the generated hash from the coprocess
-        if((len = read(fd2[READ], value, 500)) < 0) {
+        if((len = read(fd2[READ], hashResult, HASH_LEN + 1)) < 0) {
             perror("Read from pipe");
             exit(EXIT_FAILURE);
         }
@@ -86,11 +85,12 @@ char* generateHash(char* password, char* salt) {
         // if child closed pipe
         if(len == 0) {
             fprintf(stderr, "Child closed pipe!");
-            return false;
+            exit(EXIT_FAILURE);
         }
 
-        value[len] = '\0';
-        return strtok(value, " ");
+        hashResult[len] = '\0';
+        hashResult = strtok(hashResult, " ");
+        return;
     }
     else { // child
 

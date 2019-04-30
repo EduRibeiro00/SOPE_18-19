@@ -28,5 +28,5 @@
 // string has to be SALT_LEN + 1 length
 void generateRandomSalt(char* salt);
 
-// generates hash for a given passoword and salt
-char* generateHash(char* password, char* salt);
+// generates hash for a given password and salt; uses coprocess (sha256sum)
+void generateHash(char* password, char* salt, char* hashResult);

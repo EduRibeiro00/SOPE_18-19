@@ -25,7 +25,7 @@
 // int createThreads(pthread_t* tids, int numThreads);
 
 // checks if a password that a user send the server is valid
-bool checkPassword(char* password);
+bool checkPassword(uint32_t id, char* password);
 
 // gets bank account from main array; returns NULL if account doesn't exist
 bank_account_t* getBankAccount(uint32_t id);
