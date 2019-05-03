@@ -24,16 +24,78 @@
 bank_account_t accounts[MAX_BANK_ACCOUNTS];
 //--------------------------
 
-int main() {
+int main(int argc, char* argv[]) {
 
-    accounts[0].account_id = 0;
+// -----------------------
+// parte de teste
+
+    /*accounts[0].account_id = 0;
     strcpy(accounts[0].hash, "1960ac94c29be96599d4ee2d111221344ba9583d073e42d51a965a5020502489");
     strcpy(accounts[0].salt, "12345fba213acb2");
 
 
     if(checkPassword(0, "ola123"))
         printf("passou\n");
-    else printf("nao passou\n");
+    else printf("nao passou\n");*/
+
+// ------------------------
+
+    if(argc != 3) {
+        fprintf(stderr, "Illegal use of arguments! Usage: %s <numThreads> <adminPass>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    createAdminAccount(argv[2]);
+
+    // FAZER OS THREADS DEPOIS
+
+    if(mkfifo(SERVER_FIFO_PATH, 0660) < 0) {
+        if(errno == EEXIST) 
+            fprintf(stderr, "FIFO '%s' already exists\n", SERVER_FIFO_PATH);
+        else {
+            fprintf(stderr, "Can't create server FIFO!");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    int fdServer;
+    int fdServerDummy; // to avoid busy waiting
+
+    if((fdServer = open(SERVER_FIFO_PATH, O_RDONLY)) != 0) {
+        perror("Open server FIFO to read");
+        exit(EXIT_FAILURE);
+    }
+
+    if((fdServerDummy = open(SERVER_FIFO_PATH, O_WRONLY)) != 0) {
+        perror("Open server FIFO to write");
+        exit(EXIT_FAILURE);
+    }
+
+    int n;
+
+    /* do {
+        // n = read(fdServer, )
+
+    } while(); */
+
+
+
+
+
+    if(close(fdServer) != 0) {
+        perror("close");
+        exit(EXIT_FAILURE);
+    }
+
+    if(close(fdServerDummy) != 0) {
+        perror("close");
+        exit(EXIT_FAILURE);
+    }
+
+    if(unlink(SERVER_FIFO_PATH) != 0) {
+        perror("unlink");
+        exit(EXIT_FAILURE);
+    }
 
     return 0;
 }
@@ -99,3 +161,23 @@ bool getHashFromAccount(uint32_t id, char* hash) {
     strcpy(hash, account->hash);
     return true;
 }
+
+// ---------------------------------
+
+void createAdminAccount(char* password) {
+    accounts[0].account_id = ADMIN_ACCOUNT_ID;
+    accounts[0].balance = 0;
+
+    char salt[SALT_LEN + 1];
+    char hash[HASH_LEN + 1];
+
+    generateRandomSalt(salt);
+    generateHash(password, salt, hash);
+
+    strcpy(accounts[0].salt, salt);
+    strcpy(accounts[0].hash, hash);
+}
+
+// ---------------------------------
+
+bool isAdmin(uint32_t id);

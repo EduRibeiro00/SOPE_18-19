@@ -35,3 +35,8 @@ bool getSaltFromAccount(uint32_t id, char* salt);
 
 // returns hash from account; returns false if account doesn't exist
 bool getHashFromAccount(uint32_t id, char* hash); 
+
+// creates the admin account, in the beginning of the program
+void createAdminAccount(char* password);
+
+bool isAdmin(uint32_t id);
