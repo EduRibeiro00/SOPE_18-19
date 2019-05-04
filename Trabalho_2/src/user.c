@@ -26,6 +26,9 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "Illegal use of arguments! Usage: %s <ID> <\"password\"> <op_delay> <op_code> <args> \n", argv[0]);
     }
 
+    // opens (and creates, if necessary) user log file
+    int userLogFile = open(USER_LOGFILE, O_WRONLY | O_CREAT, 0664);
+
     pid_t pid = getpid();
 
     char fifoName[500];
@@ -36,7 +39,7 @@ int main(int argc, char* argv[]) {
         if(errno == EEXIST) 
             fprintf(stderr, "FIFO '%s' already exists\n", fifoName);
         else {
-            fprintf(stderr, "Can't create server FIFO!");
+            fprintf(stderr, "Can't create server FIFO!\n");
             exit(EXIT_FAILURE);
         }
     }
@@ -58,23 +61,102 @@ int main(int argc, char* argv[]) {
     if(opCode == OP_CREATE_ACCOUNT) { // if create operation
 
         char args[500];
-        argv[5]++;
-        int len = strlen(argv[5]) - 1; 
-        strncpy(args, argv[5], len);
-        args[len] = '\0';
-        
-
-
-        printf("%s\n", args);
-
+        strcpy(args, argv[5]);
+        char* token;
         req_create_account_t msgArgs;
-        msgArgs.account_id
+
+        token = strtok(args, " ");
+        
+        // account id
+        if(token != NULL)
+            msgArgs.account_id = atoi(token);
+        else {
+            fprintf(stderr, "Wrong arguments passed for this type of operation\n");
+            exit(EXIT_FAILURE);
+        }
+
+        token = strtok(NULL, " ");    
+
+        // account balance
+        if(token != NULL)
+            msgArgs.balance = atoi(token);
+        else {
+            fprintf(stderr, "Wrong arguments passed for this type of operation\n");
+            exit(EXIT_FAILURE);
+        }
+
+        token = strtok(NULL, " ");    
+
+        // account password
+        if(token != NULL)
+            strcpy(msgArgs.password, token);        
+        else {
+            fprintf(stderr, "Wrong arguments passed for this type of operation\n");
+            exit(EXIT_FAILURE);
+        }
+    
+        // to check if there is more arguments (which there shouldn't)
+        token = strtok(NULL, " "); 
+    
+        if(token != NULL) {
+            fprintf(stderr, "Wrong arguments passed for this type of operation\n");
+            exit(EXIT_FAILURE);
+        }
+
+        msgValue.create = msgArgs;
     }
     else if(opCode == OP_TRANSFER) { // if transfer operation
 
+        char args[500];
+        strcpy(args, argv[5]);
+        char* token;
+        req_transfer_t msgArgs;
 
+        token = strtok(args, " ");
+        
+        // account id
+        if(token != NULL)
+            msgArgs.account_id = atoi(token);
+        else {
+            fprintf(stderr, "Wrong arguments passed for this type of operation\n");
+            exit(EXIT_FAILURE);
+        }
+
+        token = strtok(NULL, " ");    
+
+        // money amount
+        if(token != NULL)
+            msgArgs.amount = atoi(token);
+        else {
+            fprintf(stderr, "Wrong arguments passed for this type of operation\n");
+            exit(EXIT_FAILURE);
+        }
+    
+        // to check if there is more arguments (which there shouldn't)
+        token = strtok(NULL, " "); 
+    
+        if(token != NULL) {
+            fprintf(stderr, "Wrong arguments passed for this type of operation\n");
+            exit(EXIT_FAILURE);
+        }
+
+        msgValue.transfer = msgArgs;
+    }
+    else if(opCode == OP_BALANCE || opCode == OP_SHUTDOWN) {
+        if(strcmp(argv[5], "") == 0) {
+            fprintf(stderr, "Wrong arguments passed for this type of operation\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    else {
+        fprintf(stderr, "Invalid operation type\n");
+        exit(EXIT_FAILURE);
     }
 
+    // build the request message, in TLV format
+    tlv_request_t tlvRequestMsg;
+
+    // FALTA CONSTRUIR A MENSAGEM
 
     return 0;
 }
