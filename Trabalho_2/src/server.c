@@ -71,7 +71,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    int n;
+    // int n;
 
     /* do {
         // n = read(fdServer, )
