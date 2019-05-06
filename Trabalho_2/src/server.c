@@ -22,7 +22,10 @@
 
 // global variables
 bank_account_t accounts[MAX_BANK_ACCOUNTS];
+int numAccounts = 0;
+
 tlv_request_t requests[30];
+int bufferIn = 0, bufferOut = 0;
 //--------------------------
 
 int main(int argc, char* argv[]) {
@@ -86,7 +89,7 @@ int main(int argc, char* argv[]) {
     // reads requests
     do {
         readRequest(&request, fdFifoServer);
-        i = printRequest(request);
+        // i = printRequest(request);
     } while(i);
 
 
@@ -173,17 +176,13 @@ bool getHashFromAccount(uint32_t id, char* hash) {
 // ---------------------------------
 
 void createAdminAccount(char* password) {
-    accounts[0].account_id = ADMIN_ACCOUNT_ID;
-    accounts[0].balance = 0;
 
-    char salt[SALT_LEN + 1];
-    char hash[HASH_LEN + 1];
+    if(strlen(password) < MIN_PASSWORD_LEN || strlen(password) > MAX_PASSWORD_LEN) {
+        printf("Illegal password length!\n");
+        exit(EXIT_FAILURE);
+    }
 
-    generateRandomSalt(salt);
-    generateHash(password, salt, hash);
-
-    strcpy(accounts[0].salt, salt);
-    strcpy(accounts[0].hash, hash);
+    createAccount(ADMIN_ACCOUNT_ID, password, 0);
 }
 
 // ---------------------------------
@@ -213,7 +212,69 @@ void readRequest(tlv_request_t* request, int fdFifoServer) {
     }
 }
 
+// ---------------------------------
+
+void handleRequest(tlv_request_t request) {
+
+    usleep(request.value.header.op_delay_ms);
+
+    if(!checkPassword(request.value.header.account_id, request.value.header.password)) {
+        printf("The id and password combination is invalid.\n");
+        return;
+    }
+
+    switch(request.type) {
+
+        case OP_CREATE_ACCOUNT:
+            handleCreateAccount(request.value);
+            break;    
+
+
+    }
+}
 
 // ---------------------------------
 
-bool isAdmin(uint32_t id);
+void handleCreateAccount(req_value_t value) {
+
+    if(numAccounts >= MAX_BANK_ACCOUNTS) {
+        printf("The max number of bank accounts has been reached!\n");
+        return;
+    }
+
+    if(!isAdmin(value.header.account_id)) {
+        printf("User is not admin; doesn't have permission!\n");
+        return;
+    }
+
+    if(strlen(value.create.password) < MIN_PASSWORD_LEN || strlen(value.create.password) > MAX_PASSWORD_LEN) {
+        printf("Illegal password length!\n");
+        return;
+    }
+
+    
+}
+
+// ---------------------------------
+
+void createAccount(uint32_t id, char* password, int balance) {
+    accounts[numAccounts].account_id = id;
+    accounts[numAccounts].balance = balance;
+
+    char salt[SALT_LEN + 1];
+    char hash[HASH_LEN + 1];
+
+    generateRandomSalt(salt);
+    generateHash(password, salt, hash);
+
+    strcpy(accounts[numAccounts].salt, salt);
+    strcpy(accounts[numAccounts].hash, hash);
+
+    numAccounts++;
+}
+
+// ---------------------------------
+
+bool isAdmin(uint32_t id) {
+    return id == ADMIN_ACCOUNT_ID;
+}

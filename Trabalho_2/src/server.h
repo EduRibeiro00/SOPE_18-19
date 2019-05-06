@@ -43,4 +43,10 @@ void createAdminAccount(char* password);
 // reads a user request from the server FIFO 
 void readRequest(tlv_request_t* request, int fdFifoServer);
 
+// handles and fulfills a user request
+void handleRequest(tlv_request_t request);
+
+// function that creates a new bank account
+void createAccount(uint32_t id, char* password, int balance);
+
 bool isAdmin(uint32_t id);
