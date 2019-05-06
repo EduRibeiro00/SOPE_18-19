@@ -55,10 +55,14 @@ int main(int argc, char* argv[]) {
 
     msgValue.header = msgHeader;
 
-    int opCode = atoi(argv[4]);
+    
+    tlv_request_t tlvRequestMsg;
+    tlvRequestMsg.type = atoi(argv[4]);
+
+    tlvRequestMsg.length = sizeof(req_header_t);
 
 
-    if(opCode == OP_CREATE_ACCOUNT) { // if create operation
+    if(tlvRequestMsg.type == OP_CREATE_ACCOUNT) { // if create operation
 
         char args[500];
         strcpy(args, argv[5]);
@@ -104,8 +108,9 @@ int main(int argc, char* argv[]) {
         }
 
         msgValue.create = msgArgs;
+        tlvRequestMsg.length += sizeof(req_create_account_t);
     }
-    else if(opCode == OP_TRANSFER) { // if transfer operation
+    else if(tlvRequestMsg.type == OP_TRANSFER) { // if transfer operation
 
         char args[500];
         strcpy(args, argv[5]);
@@ -141,8 +146,9 @@ int main(int argc, char* argv[]) {
         }
 
         msgValue.transfer = msgArgs;
+        tlvRequestMsg.length += sizeof(req_transfer_t);
     }
-    else if(opCode == OP_BALANCE || opCode == OP_SHUTDOWN) {
+    else if(tlvRequestMsg.type == OP_BALANCE || tlvRequestMsg.type == OP_SHUTDOWN) {
         if(strcmp(argv[5], "") != 0) {
             fprintf(stderr, "Wrong arguments passed for this type of operation\n");
             exit(EXIT_FAILURE);
@@ -154,11 +160,7 @@ int main(int argc, char* argv[]) {
     }
 
     // build the request message, in TLV format
-    tlv_request_t tlvRequestMsg;
-    tlvRequestMsg.type = opCode;
-    tlvRequestMsg.length = sizeof(msgValue);
     tlvRequestMsg.value = msgValue;
-    
 
     // open server FIFO
     int fdFifoServer = open(SERVER_FIFO_PATH, O_WRONLY);
@@ -167,13 +169,16 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    int totalLength = sizeof(op_type_t) + sizeof(uint32_t) + tlvRequestMsg.length;
+    int n;
+
     // send request to server program
-    if(write(fdFifoServer, &tlvRequestMsg, sizeof(tlv_request_t)) < 0) {
+    if((n = write(fdFifoServer, &tlvRequestMsg, totalLength)) < 0) {
         perror("Write request to server");
         exit(EXIT_FAILURE);
     }
 
-
+    
     // opens user FIFO
     int fdFifoUser = open(fifoName, O_RDONLY);
     if(fdFifoUser == -1) {

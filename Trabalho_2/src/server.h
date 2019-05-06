@@ -39,4 +39,8 @@ bool getHashFromAccount(uint32_t id, char* hash);
 // creates the admin account, in the beginning of the program
 void createAdminAccount(char* password);
 
+
+// reads a user request from the server FIFO 
+void readRequest(tlv_request_t* request, int fdFifoServer);
+
 bool isAdmin(uint32_t id);

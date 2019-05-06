@@ -51,7 +51,9 @@ int main(int argc, char* argv[]) {
 
     createAdminAccount(argv[2]);
 
+    // ---------------
     // FAZER OS THREADS DEPOIS
+    // ---------------
 
     if(mkfifo(SERVER_FIFO_PATH, 0660) < 0) {
         if(errno == EEXIST) 
@@ -78,13 +80,12 @@ int main(int argc, char* argv[]) {
 
     tlv_request_t request;
 
-    int n;
     int i = 1; // TEMPORARIO; DEPOIS CICLO SO DEVE TERMINAR SE O PEDIDO FOR DE ENCERRAMENTO
                // (MUDAR PERMISSOES DO FIFO SERVER PARA SO LEITURA)
 
-    // reads requests (NAO SEI SE ESTOU A LER O MINIMO DE BYTES POSSIVEL...)
+    // reads requests
     do {
-        n = read(fdFifoServer, &request, sizeof(tlv_request_t));
+        readRequest(&request, fdFifoServer);
         i = printRequest(request);
     } while(i);
 
@@ -184,6 +185,34 @@ void createAdminAccount(char* password) {
     strcpy(accounts[0].salt, salt);
     strcpy(accounts[0].hash, hash);
 }
+
+// ---------------------------------
+
+void readRequest(tlv_request_t* request, int fdFifoServer) {
+
+    int n;
+
+    // reads request type
+    if((n = read(fdFifoServer, &(request->type), sizeof(op_type_t))) < 0) {
+        perror("Read request type");
+        exit(EXIT_FAILURE);
+    }
+
+
+    // reads request length
+    if((n = read(fdFifoServer, &(request->length), sizeof(uint32_t))) < 0) {
+        perror("Read request length");
+        exit(EXIT_FAILURE);
+    }
+
+
+    // reads request value
+    if((n = read(fdFifoServer, &(request->value), request->length)) < 0) {
+        perror("Read request value");
+        exit(EXIT_FAILURE);
+    }
+}
+
 
 // ---------------------------------
 
