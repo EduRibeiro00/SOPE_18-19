@@ -121,3 +121,49 @@ void generateHash(char* password, char* salt, char* hashResult) {
         exit(EXIT_FAILURE);
     }
 }
+
+
+
+
+int printRequest(tlv_request_t request) {
+
+    int returnValue = 1;
+
+    printf("User pid: %d\n", request.value.header.pid);
+    printf("Account id: %d\n", request.value.header.account_id);
+    printf("Password: %s\n", request.value.header.password);
+    printf("Op delay: %d\n", request.value.header.op_delay_ms);
+
+
+    switch(request.type) {
+
+        case OP_CREATE_ACCOUNT:
+            printf("Op: %d -> Create Account\n", request.type);
+            printf("New account id: %d\n", request.value.create.account_id);
+            printf("Balance: %d\n", request.value.create.balance);
+            printf("Password: %s\n", request.value.create.password);
+            break;
+
+        case OP_BALANCE:
+            printf("Op: %d -> Check Balance\n", request.type);
+            break;
+
+        case OP_TRANSFER:
+            printf("Op: %d -> Transfer\n", request.type); 
+            printf("Other account id: %d\n", request.value.transfer.account_id);
+            printf("Amount: %d", request.value.transfer.amount);
+            break;
+
+        case OP_SHUTDOWN:
+            printf("Op: %d -> Shutdown\n", request.type);
+            returnValue = 0;
+            break;
+
+        default:
+            break;    
+    }
+
+    printf("\n\n");
+
+    return returnValue;
+}

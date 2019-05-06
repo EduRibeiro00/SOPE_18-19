@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
     }
 
     // opens (and creates, if necessary) user log file
-    int userLogFile = open(USER_LOGFILE, O_WRONLY | O_CREAT, 0664);
+    // int userLogFile = open(USER_LOGFILE, O_WRONLY | O_CREAT, 0664);
 
     pid_t pid = getpid();
 
@@ -49,9 +49,9 @@ int main(int argc, char* argv[]) {
 
     // fill in the message header
     msgHeader.pid = pid;
-    msgHeader.account_id = argv[1];
+    msgHeader.account_id = atoi(argv[1]);
     strcpy(msgHeader.password, argv[2]);
-    msgHeader.op_delay_ms = argv[3];
+    msgHeader.op_delay_ms = atoi(argv[3]);
 
     msgValue.header = msgHeader;
 
@@ -143,7 +143,7 @@ int main(int argc, char* argv[]) {
         msgValue.transfer = msgArgs;
     }
     else if(opCode == OP_BALANCE || opCode == OP_SHUTDOWN) {
-        if(strcmp(argv[5], "") == 0) {
+        if(strcmp(argv[5], "") != 0) {
             fprintf(stderr, "Wrong arguments passed for this type of operation\n");
             exit(EXIT_FAILURE);
         }
@@ -155,8 +155,52 @@ int main(int argc, char* argv[]) {
 
     // build the request message, in TLV format
     tlv_request_t tlvRequestMsg;
+    tlvRequestMsg.type = opCode;
+    tlvRequestMsg.length = sizeof(msgValue);
+    tlvRequestMsg.value = msgValue;
+    
 
-    // FALTA CONSTRUIR A MENSAGEM
+    // open server FIFO
+    int fdFifoServer = open(SERVER_FIFO_PATH, O_WRONLY);
+    if(fdFifoServer == -1) {
+        perror("Open server FIFO");
+        exit(EXIT_FAILURE);
+    }
+
+    // send request to server program
+    if(write(fdFifoServer, &tlvRequestMsg, sizeof(tlv_request_t)) < 0) {
+        perror("Write request to server");
+        exit(EXIT_FAILURE);
+    }
+
+
+    // opens user FIFO
+    int fdFifoUser = open(fifoName, O_RDONLY);
+    if(fdFifoUser == -1) {
+        perror("Open user FIFO");
+        exit(EXIT_FAILURE);
+    }
+
+    // FALTA RECEBER RESPOSTA DO SERVER, ATRAVES DO USER FIFO
+    // (OU ACABAR O PROGRAMA PASSADOS FIFO_TIMEOUT_SECS)
+
+
+
+    // close and destroy file descriptors and user FIFO
+    if(close(fdFifoUser) != 0) {
+        perror("close");
+        exit(EXIT_FAILURE);
+    }
+
+    if(close(fdFifoServer) != 0) {
+        perror("close");
+        exit(EXIT_FAILURE);
+    }
+
+    if(unlink(fifoName) != 0) {
+        perror("unlink");
+        exit(EXIT_FAILURE);
+    }
 
     return 0;
 }

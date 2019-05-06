@@ -30,3 +30,8 @@ void generateRandomSalt(char* salt);
 
 // generates hash for a given password and salt; uses coprocess (sha256sum)
 void generateHash(char* password, char* salt, char* hashResult);
+
+
+// test function; just to see if server is getting the user requests
+// returns 0 (false) if shutdown request; 1 (true otherwise)
+int printRequest(tlv_request_t request);

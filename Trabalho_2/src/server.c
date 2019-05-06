@@ -22,6 +22,7 @@
 
 // global variables
 bank_account_t accounts[MAX_BANK_ACCOUNTS];
+tlv_request_t requests[30];
 //--------------------------
 
 int main(int argc, char* argv[]) {
@@ -45,6 +46,9 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    // opens (and creates, if necessary) server log file
+    // int serverLogFile = open(SERVER_LOGFILE, O_WRONLY | O_CREAT, 0664);
+
     createAdminAccount(argv[2]);
 
     // FAZER OS THREADS DEPOIS
@@ -58,36 +62,39 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    int fdServer;
-    int fdServerDummy; // to avoid busy waiting
+    int fdFifoServer;
+    int fdFifoServerDummy; // to avoid busy waiting
+    // int fdFifoUser;
 
-    if((fdServer = open(SERVER_FIFO_PATH, O_RDONLY)) != 0) {
+    if((fdFifoServer = open(SERVER_FIFO_PATH, O_RDONLY)) == -1) {
         perror("Open server FIFO to read");
         exit(EXIT_FAILURE);
     }
 
-    if((fdServerDummy = open(SERVER_FIFO_PATH, O_WRONLY)) != 0) {
+    if((fdFifoServerDummy = open(SERVER_FIFO_PATH, O_WRONLY)) == -1) {
         perror("Open server FIFO to write");
         exit(EXIT_FAILURE);
     }
 
-    // int n;
+    tlv_request_t request;
 
-    /* do {
-        // n = read(fdServer, )
+    int n;
+    int i = 1; // TEMPORARIO; DEPOIS CICLO SO DEVE TERMINAR SE O PEDIDO FOR DE ENCERRAMENTO
+               // (MUDAR PERMISSOES DO FIFO SERVER PARA SO LEITURA)
 
-    } while(); */
+    // reads requests (NAO SEI SE ESTOU A LER O MINIMO DE BYTES POSSIVEL...)
+    do {
+        n = read(fdFifoServer, &request, sizeof(tlv_request_t));
+        i = printRequest(request);
+    } while(i);
 
 
-
-
-
-    if(close(fdServer) != 0) {
+    if(close(fdFifoServer) != 0) {
         perror("close");
         exit(EXIT_FAILURE);
     }
 
-    if(close(fdServerDummy) != 0) {
+    if(close(fdFifoServerDummy) != 0) {
         perror("close");
         exit(EXIT_FAILURE);
     }
