@@ -232,9 +232,21 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
+
+
+
+
+
     // FALTA RECEBER RESPOSTA DO SERVER, ATRAVES DO USER FIFO
     // (OU ACABAR O PROGRAMA PASSADOS FIFO_TIMEOUT_SECS)
 
+    tlv_reply_t replyMsg;
+    readReply(&replyMsg, fdFifoUser);
+
+    // ---
+    // so para testar
+    printReply(replyMsg);
+    // ---
 
 
     // close and destroy file descriptors and user FIFO
@@ -254,4 +266,32 @@ int main(int argc, char* argv[]) {
     }
 
     return 0;
+}
+
+// ---------------------------------
+
+void readReply(tlv_reply_t* reply, int fdUserFifo) {
+    
+    int n;
+
+    // reads request type
+    if((n = read(fdUserFifo, &(reply->type), sizeof(op_type_t))) < 0) {
+        perror("Read request type");
+        exit(EXIT_FAILURE);
+    }
+
+
+    // reads request length
+    if((n = read(fdUserFifo, &(reply->length), sizeof(uint32_t))) < 0) {
+        perror("Read request length");
+        exit(EXIT_FAILURE);
+    }
+
+
+    // reads request value
+    if((n = read(fdUserFifo, &(reply->value), reply->length)) < 0) {
+        perror("Read request value");
+        exit(EXIT_FAILURE);
+    }
+
 }

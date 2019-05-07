@@ -60,7 +60,7 @@ int main(int argc, char* argv[]) {
     // FAZER OS THREADS DEPOIS
     // ---------------
 
-    if(mkfifo(SERVER_FIFO_PATH, 0660) < 0) {
+    if(mkfifo(SERVER_FIFO_PATH, 0666) < 0) {
         if(errno == EEXIST) 
             fprintf(stderr, "FIFO '%s' already exists\n", SERVER_FIFO_PATH);
         else {
@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
     }
 
     int fdFifoServerDummy; // to avoid busy waiting
-    // int fdFifoUser;
+    int fdFifoUser;
 
     if((fdFifoServer = open(SERVER_FIFO_PATH, O_RDONLY)) == -1) {
         perror("Open server FIFO to read");
@@ -83,6 +83,7 @@ int main(int argc, char* argv[]) {
     }
 
     tlv_request_t request;
+    tlv_reply_t reply;
 
     int i = 1; // TEMPORARIO; DEPOIS CICLO SO DEVE TERMINAR SE O PEDIDO FOR DE ENCERRAMENTO
                // (MUDAR PERMISSOES DO FIFO SERVER PARA SO LEITURA)
@@ -90,7 +91,26 @@ int main(int argc, char* argv[]) {
     // reads requests
     do {
         readRequest(&request);
-        handleRequest(request);
+        handleRequest(request, &reply);
+
+        char fifoNameUser[500];
+        sprintf(fifoNameUser, "%s%d", USER_FIFO_PATH_PREFIX, request.value.header.pid);
+
+        // opens user fifo to send reply message
+        if((fdFifoUser = open(fifoNameUser, O_WRONLY)) == -1) {
+            perror("Open user FIFO to write");
+            reply.value.header.ret_code = RC_USR_DOWN;
+            // exit(EXIT_FAILURE);
+        }
+
+        // sends reply
+        writeReply(&reply, fdFifoUser);
+
+        // closes user FIFO
+        if(close(fdFifoUser) != 0) {
+            perror("close");
+            exit(EXIT_FAILURE);
+        }
 
     } while(i);
 
@@ -228,33 +248,48 @@ void readRequest(tlv_request_t* request) {
 
 // ---------------------------------
 
-void handleRequest(tlv_request_t request) {
+void writeReply(tlv_reply_t* reply, int fdFifoUser) {
+
+    int totalLength = sizeof(op_type_t) + sizeof(uint32_t) + reply->length;
+
+    int n;
+
+    // send request to server program
+    if((n = write(fdFifoUser, reply, totalLength)) < 0) {
+        perror("Write reply to user");
+        reply->value.header.ret_code = RC_USR_DOWN;
+        // exit(EXIT_FAILURE);
+    }
+}
+
+// ---------------------------------
+
+void handleRequest(tlv_request_t request, tlv_reply_t* reply) {
 
     // delay is in milisseconds; usleep() needs microsseconds
     usleep(request.value.header.op_delay_ms * 1000);
 
-    // autentication
-    if(!checkPassword(request.value.header.account_id, request.value.header.password)) {
-        printf("The id and password combination is invalid.\n");
-        return;
-    }
+    reply->type = request.type;
+    reply->value.header.account_id = request.value.header.account_id;
+    reply->length = sizeof(rep_header_t);
 
     switch(request.type) {
 
         case OP_CREATE_ACCOUNT:
-            handleCreateAccount(request.value);
+            handleCreateAccount(request.value, reply);
             break;
 
         case OP_BALANCE:
-            handleCheckBalance(request.value);
+            handleCheckBalance(request.value, reply);
             break;
 
         case OP_TRANSFER:
-            handleTransfer(request.value);
+            handleTransfer(request.value, reply);
             break;     
 
         case OP_SHUTDOWN:
-            handleShutdown(request.value);
+            handleShutdown(request.value, reply);
+            break;
 
         default:
             break;        
@@ -263,96 +298,145 @@ void handleRequest(tlv_request_t request) {
 
 // ---------------------------------
 
-void handleCreateAccount(req_value_t value) {
+void handleCreateAccount(req_value_t value, tlv_reply_t* reply) {
 
-    if(numAccounts >= MAX_BANK_ACCOUNTS) {
-        printf("The max number of bank accounts has been reached!\n");
+    // autentication
+    if(!checkPassword(value.header.account_id, value.header.password)) {
+        printf("The id and password combination is invalid.\n");
+        reply->value.header.ret_code = RC_LOGIN_FAIL;
         return;
     }
 
-    // op_nallow
+
     if(!isAdmin(value.header.account_id)) {
         printf("User is not admin; doesn't have permission!\n");
+        reply->value.header.ret_code = RC_OP_NALLOW;
         return;
     }
 
-    // id_in_use
+    // if there is no more space for bank accounts, and each one has a different id from 0-MAX_BANK_ACCOUNTS,
+    // then it means that the id given (that is valid) is already being used.
+    if(numAccounts >= MAX_BANK_ACCOUNTS) {
+        printf("The max number of bank accounts has been reached!\n");
+        reply->value.header.ret_code = RC_ID_IN_USE;
+        return;
+    }
+
+    // verifies if the bank account already exists
     if(getBankAccount(value.create.account_id) != NULL) {
         printf("Account already exists!\n");
+        reply->value.header.ret_code = RC_ID_IN_USE;
         return;
     }
 
     createAccount(value.create.account_id, value.create.password, value.create.balance);
+    reply->value.header.ret_code = RC_OK;
 }
 
 // ---------------------------------
 
-void handleCheckBalance(req_value_t value) {
+void handleCheckBalance(req_value_t value, tlv_reply_t* reply) {
 
-    // op_nallow
-    if(isAdmin(value.header.account_id)) {
-        printf("User is admin; can't perform this operation!\n");
+    // autentication
+    if(!checkPassword(value.header.account_id, value.header.password)) {
+        printf("The id and password combination is invalid.\n");
+        reply->value.header.ret_code = RC_LOGIN_FAIL;
         return;
     }
 
+
+
+    if(isAdmin(value.header.account_id)) {
+        printf("User is admin; can't perform this operation!\n");
+        reply->value.header.ret_code = RC_OP_NALLOW;
+        return;
+    }
+        
     uint32_t balance;
 
-    // will always return true because if autentication was sucessfull, means that account exists
+    // will always return true because if autentication was sucessful, means that account exists
     getBalanceFromAccount(value.header.account_id, &balance);
 
-    // RETORNAR SALDO
+    reply->value.header.ret_code = RC_OK;
+    reply->value.balance.balance = balance;
+    reply->length += sizeof(rep_balance_t);    
 }
 
 // ---------------------------------
 
-void handleTransfer(req_value_t value) {
+void handleTransfer(req_value_t value, tlv_reply_t* reply) {
     
-    // op_nallow
+    // autentication
+    if(!checkPassword(value.header.account_id, value.header.password)) {
+        printf("The id and password combination is invalid.\n");
+        reply->value.header.ret_code = RC_LOGIN_FAIL;
+        return;
+    }
+
+
     if(isAdmin(value.header.account_id)) {
         printf("User is admin; can't perform this operation!\n");
+        reply->value.header.ret_code = RC_OP_NALLOW;
         return;
     }
 
     bank_account_t* sourceAccount = getBankAccount(value.header.account_id);
     bank_account_t* destAccount = getBankAccount(value.transfer.account_id);
     
-    // id_not_found
+
+    reply->value.header.ret_code = RC_OK;
+
     if(destAccount == NULL) {
         printf("Destination account doesn't exist!\n");
-        return;
+        reply->value.header.ret_code = RC_ID_NOT_FOUND;
     }
 
-    // same_id
+
     if(value.header.account_id == value.transfer.account_id) {
         printf("The accounts are the same! Transfer not possible\n");
-        return;
+        reply->value.header.ret_code = RC_SAME_ID;
     }
 
-    // no_funds
+
     if(sourceAccount->balance < value.transfer.amount) {
         printf("Not enough money to complete the transfer!\n");
-        return;
+        reply->value.header.ret_code = RC_NO_FUNDS;
     }
 
-    // too_high
-    if(destAccount->balance + value.transfer.amount > MAX_BALANCE) {
+
+    if(destAccount != NULL && destAccount->balance + value.transfer.amount > MAX_BALANCE) {
         printf("The destination account's balance would be too high!\n");
-        return;
+        reply->value.header.ret_code = RC_TOO_HIGH;
     }
 
-    transferAmount(sourceAccount, destAccount, value.transfer.amount);
+    if(reply->value.header.ret_code == RC_OK)
+        transferAmount(sourceAccount, destAccount, value.transfer.amount);
 
+    uint32_t balance;
 
-    // RETORNAR SALDO DA CONTA SOURCE
+    // will always return true because if autentication was sucessful, means that account exists
+    getBalanceFromAccount(value.header.account_id, &balance);
+
+    reply->value.transfer.balance = balance;
+    reply->length += sizeof(rep_transfer_t);
 }
 
 // ---------------------------------
 
-void handleShutdown(req_value_t value) {
+void handleShutdown(req_value_t value, tlv_reply_t* reply) {
 
-    // op_nallow
+    // autentication
+    if(!checkPassword(value.header.account_id, value.header.password)) {
+        printf("The id and password combination is invalid.\n");
+        reply->value.header.ret_code = RC_LOGIN_FAIL;
+        return;
+    }
+
+
+
     if(!isAdmin(value.header.account_id)) {
         printf("User is not admin; doesn't have permission!\n");
+        reply->value.header.ret_code = RC_OP_NALLOW;
         return;
     }
 
@@ -361,10 +445,14 @@ void handleShutdown(req_value_t value) {
         perror("fchmod");
         exit(EXIT_FAILURE);
     }
+    
+    reply->value.header.ret_code = RC_OK;
 
     // PROGRAMA SO DEVE TERMINAR QUANDO TODOS OS PEDIDOS RESTANTES FOREM PROCESSADOS
     
-    // RETORNAR TAMBEM O NUMERO DE THREADS ATIVAS (A PROCESSAR UM PEDIDO) NO MOMENTO DO ENVIO. 
+    // RETORNAR TAMBEM O NUMERO DE THREADS ATIVAS (A PROCESSAR UM PEDIDO) NO MOMENTO DO ENVIO.
+    reply->value.shutdown.active_offices = 1; // por agora fica 1, como valor de teste
+    reply->length += sizeof(rep_shutdown_t);
 }
 
 // ---------------------------------

@@ -35,3 +35,6 @@ void generateHash(char* password, char* salt, char* hashResult);
 // test function; just to see if server is getting the user requests
 // returns 0 (false) if shutdown request; 1 (true otherwise)
 int printRequest(tlv_request_t request);
+
+// for test purposes; prints the reply gotten from the server 
+void printReply(tlv_reply_t reply);

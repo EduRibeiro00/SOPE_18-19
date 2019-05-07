@@ -45,6 +45,9 @@ void createAdminAccount(char* password);
 // reads a user request from the server FIFO 
 void readRequest(tlv_request_t* request);
 
+// writes a reply message to the user FIFO
+void writeReply(tlv_reply_t* reply, int fdFifoUser);
+
 // function that creates a new bank account
 void createAccount(uint32_t id, char* password, int balance);
 
@@ -58,16 +61,16 @@ void transferAmount(bank_account_t* sourceAccount, bank_account_t* destAccount, 
 
 
 // handles and fulfills a user request
-void handleRequest(tlv_request_t request);
+void handleRequest(tlv_request_t request, tlv_reply_t* reply);
 
 // handles a "create account" request
-void handleCreateAccount(req_value_t value);
+void handleCreateAccount(req_value_t value, tlv_reply_t* reply);
 
 // handles a "check balance" request
-void handleCheckBalance(req_value_t value);
+void handleCheckBalance(req_value_t value, tlv_reply_t* reply);
 
 //handles a "transfer" request
-void handleTransfer(req_value_t value); 
+void handleTransfer(req_value_t value, tlv_reply_t* reply); 
 
 // handles a "shutdown" request
-void handleShutdown(req_value_t value);
+void handleShutdown(req_value_t value, tlv_reply_t* reply);

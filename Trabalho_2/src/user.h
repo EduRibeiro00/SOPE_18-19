@@ -20,3 +20,6 @@
 #include "sope.h"
 #include "types.h"
 #include "aux.h"
+
+// reads from the user FIFO the reply
+void readReply(tlv_reply_t* reply, int fdUserFifo);

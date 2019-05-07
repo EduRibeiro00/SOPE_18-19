@@ -122,8 +122,7 @@ void generateHash(char* password, char* salt, char* hashResult) {
     }
 }
 
-
-
+// ---------------------------------
 
 int printRequest(tlv_request_t request) {
 
@@ -166,4 +165,42 @@ int printRequest(tlv_request_t request) {
     printf("\n\n");
 
     return returnValue;
+}
+
+// ---------------------------------
+
+void printReply(tlv_reply_t reply) {
+
+    printf("Account id: %d\n", reply.value.header.account_id);
+
+    switch(reply.type) {
+
+        case OP_CREATE_ACCOUNT:
+            printf("Op: %d -> Create Account\n", reply.type);
+            printf("Ret code: %d\n", reply.value.header.ret_code);
+            break;
+
+        case OP_BALANCE:
+            printf("Op: %d -> Check Balance\n", reply.type);
+            printf("Ret code: %d\n", reply.value.header.ret_code);
+            printf("Balance: %d\n", reply.value.balance.balance);
+            break;
+
+        case OP_TRANSFER:
+            printf("Op: %d -> Transfer\n", reply.type);
+            printf("Ret code: %d\n", reply.value.header.ret_code);
+            printf("New balance of the source account: %d\n", reply.value.transfer.balance);
+            break;
+
+        case OP_SHUTDOWN:
+            printf("Op: %d -> Shutdown\n", reply.type);
+            printf("Ret code: %d\n", reply.value.header.ret_code);
+            printf("Active offices: %d\n", reply.value.shutdown.active_offices);
+            break;
+
+        default:
+            break;  
+    }
+
+    printf("\n\n");
 }
