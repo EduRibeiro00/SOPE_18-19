@@ -41,7 +41,7 @@ void generateRandomSalt(char* salt) {
 
 void generateHash(char* password, char* salt, char* hashResult) {
 
-     int fd1[2], fd2[2];
+    int fd1[2], fd2[2];
     pid_t pid;
 
     if(pipe(fd1) < 0 || pipe(fd2) < 0) {

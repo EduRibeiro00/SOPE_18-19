@@ -26,6 +26,8 @@ int numAccounts = 0;
 
 tlv_request_t requests[30];
 int bufferIn = 0, bufferOut = 0;
+
+int fdFifoServer;
 //--------------------------
 
 int main(int argc, char* argv[]) {
@@ -67,7 +69,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    int fdFifoServer;
     int fdFifoServerDummy; // to avoid busy waiting
     // int fdFifoUser;
 
@@ -88,8 +89,9 @@ int main(int argc, char* argv[]) {
 
     // reads requests
     do {
-        readRequest(&request, fdFifoServer);
-        // i = printRequest(request);
+        readRequest(&request);
+        handleRequest(request);
+
     } while(i);
 
 
@@ -132,7 +134,7 @@ bool checkPassword(uint32_t id, char* password) {
     if(!(getHashFromAccount(id, hash) && getSaltFromAccount(id, salt)))
         return false;
 
-    // checks if hash if equal to the generated hash
+    // checks if hash is equal to the generated hash
     generateHash(password, salt, hashResult);
     return (!strcmp(hash, hashResult));
 }
@@ -175,6 +177,18 @@ bool getHashFromAccount(uint32_t id, char* hash) {
 
 // ---------------------------------
 
+bool getBalanceFromAccount(uint32_t id, uint32_t* balance) {
+
+    bank_account_t* account = getBankAccount(id);
+    if(account == NULL)
+        return false;
+
+    *balance = account->balance;
+    return true;
+}
+
+// ---------------------------------
+
 void createAdminAccount(char* password) {
 
     if(strlen(password) < MIN_PASSWORD_LEN || strlen(password) > MAX_PASSWORD_LEN) {
@@ -187,7 +201,7 @@ void createAdminAccount(char* password) {
 
 // ---------------------------------
 
-void readRequest(tlv_request_t* request, int fdFifoServer) {
+void readRequest(tlv_request_t* request) {
 
     int n;
 
@@ -216,8 +230,10 @@ void readRequest(tlv_request_t* request, int fdFifoServer) {
 
 void handleRequest(tlv_request_t request) {
 
-    usleep(request.value.header.op_delay_ms);
+    // delay is in milisseconds; usleep() needs microsseconds
+    usleep(request.value.header.op_delay_ms * 1000);
 
+    // autentication
     if(!checkPassword(request.value.header.account_id, request.value.header.password)) {
         printf("The id and password combination is invalid.\n");
         return;
@@ -227,9 +243,21 @@ void handleRequest(tlv_request_t request) {
 
         case OP_CREATE_ACCOUNT:
             handleCreateAccount(request.value);
-            break;    
+            break;
 
+        case OP_BALANCE:
+            handleCheckBalance(request.value);
+            break;
 
+        case OP_TRANSFER:
+            handleTransfer(request.value);
+            break;     
+
+        case OP_SHUTDOWN:
+            handleShutdown(request.value);
+
+        default:
+            break;        
     }
 }
 
@@ -242,17 +270,101 @@ void handleCreateAccount(req_value_t value) {
         return;
     }
 
+    // op_nallow
     if(!isAdmin(value.header.account_id)) {
         printf("User is not admin; doesn't have permission!\n");
         return;
     }
 
-    if(strlen(value.create.password) < MIN_PASSWORD_LEN || strlen(value.create.password) > MAX_PASSWORD_LEN) {
-        printf("Illegal password length!\n");
+    // id_in_use
+    if(getBankAccount(value.create.account_id) != NULL) {
+        printf("Account already exists!\n");
         return;
     }
 
+    createAccount(value.create.account_id, value.create.password, value.create.balance);
+}
+
+// ---------------------------------
+
+void handleCheckBalance(req_value_t value) {
+
+    // op_nallow
+    if(isAdmin(value.header.account_id)) {
+        printf("User is admin; can't perform this operation!\n");
+        return;
+    }
+
+    uint32_t balance;
+
+    // will always return true because if autentication was sucessfull, means that account exists
+    getBalanceFromAccount(value.header.account_id, &balance);
+
+    // RETORNAR SALDO
+}
+
+// ---------------------------------
+
+void handleTransfer(req_value_t value) {
     
+    // op_nallow
+    if(isAdmin(value.header.account_id)) {
+        printf("User is admin; can't perform this operation!\n");
+        return;
+    }
+
+    bank_account_t* sourceAccount = getBankAccount(value.header.account_id);
+    bank_account_t* destAccount = getBankAccount(value.transfer.account_id);
+    
+    // id_not_found
+    if(destAccount == NULL) {
+        printf("Destination account doesn't exist!\n");
+        return;
+    }
+
+    // same_id
+    if(value.header.account_id == value.transfer.account_id) {
+        printf("The accounts are the same! Transfer not possible\n");
+        return;
+    }
+
+    // no_funds
+    if(sourceAccount->balance < value.transfer.amount) {
+        printf("Not enough money to complete the transfer!\n");
+        return;
+    }
+
+    // too_high
+    if(destAccount->balance + value.transfer.amount > MAX_BALANCE) {
+        printf("The destination account's balance would be too high!\n");
+        return;
+    }
+
+    transferAmount(sourceAccount, destAccount, value.transfer.amount);
+
+
+    // RETORNAR SALDO DA CONTA SOURCE
+}
+
+// ---------------------------------
+
+void handleShutdown(req_value_t value) {
+
+    // op_nallow
+    if(!isAdmin(value.header.account_id)) {
+        printf("User is not admin; doesn't have permission!\n");
+        return;
+    }
+
+    // changes FIFO permissions to read only, to avoid receiving new requests
+    if(fchmod(fdFifoServer, S_IRUSR | S_IRGRP | S_IROTH ) < 0) {
+        perror("fchmod");
+        exit(EXIT_FAILURE);
+    }
+
+    // PROGRAMA SO DEVE TERMINAR QUANDO TODOS OS PEDIDOS RESTANTES FOREM PROCESSADOS
+    
+    // RETORNAR TAMBEM O NUMERO DE THREADS ATIVAS (A PROCESSAR UM PEDIDO) NO MOMENTO DO ENVIO. 
 }
 
 // ---------------------------------
@@ -271,6 +383,13 @@ void createAccount(uint32_t id, char* password, int balance) {
     strcpy(accounts[numAccounts].hash, hash);
 
     numAccounts++;
+}
+
+// ---------------------------------
+
+void transferAmount(bank_account_t* sourceAccount, bank_account_t* destAccount, uint32_t amount) {
+    sourceAccount->balance -= amount;
+    destAccount->balance += amount;
 }
 
 // ---------------------------------

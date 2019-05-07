@@ -36,17 +36,38 @@ bool getSaltFromAccount(uint32_t id, char* salt);
 // returns hash from account; returns false if account doesn't exist
 bool getHashFromAccount(uint32_t id, char* hash); 
 
+// returns balance from account; returns false if account doesn't exist
+bool getBalanceFromAccount(uint32_t id, uint32_t* balance);
+
 // creates the admin account, in the beginning of the program
 void createAdminAccount(char* password);
 
-
 // reads a user request from the server FIFO 
-void readRequest(tlv_request_t* request, int fdFifoServer);
-
-// handles and fulfills a user request
-void handleRequest(tlv_request_t request);
+void readRequest(tlv_request_t* request);
 
 // function that creates a new bank account
 void createAccount(uint32_t id, char* password, int balance);
 
+// return true if id is the admin id
 bool isAdmin(uint32_t id);
+
+// transfers a specific amount from one account to other; assumes all needed validation and verification was done
+// before the function call
+void transferAmount(bank_account_t* sourceAccount, bank_account_t* destAccount, uint32_t amount);
+
+
+
+// handles and fulfills a user request
+void handleRequest(tlv_request_t request);
+
+// handles a "create account" request
+void handleCreateAccount(req_value_t value);
+
+// handles a "check balance" request
+void handleCheckBalance(req_value_t value);
+
+//handles a "transfer" request
+void handleTransfer(req_value_t value); 
+
+// handles a "shutdown" request
+void handleShutdown(req_value_t value);

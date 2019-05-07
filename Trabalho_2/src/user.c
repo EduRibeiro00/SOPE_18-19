@@ -53,6 +53,18 @@ int main(int argc, char* argv[]) {
     strcpy(msgHeader.password, argv[2]);
     msgHeader.op_delay_ms = atoi(argv[3]);
 
+    // check if ID is in the valid range (if it is not, it will never correspond to an account)
+    if(msgHeader.account_id < ADMIN_ACCOUNT_ID || msgHeader.account_id >= MAX_BANK_ACCOUNTS) {
+        printf("Account ID is not in the valid range!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // check if passoword is in the valid length range (if it is not, it will never be a password for an account)
+    if(strlen(msgHeader.password) < MIN_PASSWORD_LEN || strlen(msgHeader.password) > MAX_PASSWORD_LEN) {
+        printf("Illegal password length!\n");
+        exit(EXIT_FAILURE);
+    }
+
     msgValue.header = msgHeader;
 
     
@@ -107,6 +119,25 @@ int main(int argc, char* argv[]) {
             exit(EXIT_FAILURE);
         }
 
+
+        // verification of the argument values
+        if(strlen(msgArgs.password) < MIN_PASSWORD_LEN || strlen(msgArgs.password) > MAX_PASSWORD_LEN) {
+            printf("Illegal password length!\n");
+            exit(EXIT_FAILURE);
+        }
+
+        if(msgArgs.balance < MIN_BALANCE || msgArgs.balance > MAX_BALANCE) {
+            printf("Invalid account balance!\n");
+            exit(EXIT_FAILURE);
+        }
+
+        if(msgArgs.account_id < 1 || msgArgs.account_id >= MAX_BANK_ACCOUNTS) {
+            printf("New account cannot be created with that id!\n");
+            exit(EXIT_FAILURE);
+        }
+
+
+
         msgValue.create = msgArgs;
         tlvRequestMsg.length += sizeof(req_create_account_t);
     }
@@ -144,6 +175,21 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "Wrong arguments passed for this type of operation\n");
             exit(EXIT_FAILURE);
         }
+
+
+
+        // verification of the argument values
+        if(msgArgs.account_id < 1 || msgArgs.account_id >= MAX_BANK_ACCOUNTS) {
+            printf("Invalid ID for the destination account!\n");
+            exit(EXIT_FAILURE);
+        }
+
+        if(msgArgs.amount < MIN_BALANCE || msgArgs.amount > MAX_BALANCE) {
+            printf("Invalid amount value!\n");
+            exit(EXIT_FAILURE);
+        }
+
+
 
         msgValue.transfer = msgArgs;
         tlvRequestMsg.length += sizeof(req_transfer_t);
