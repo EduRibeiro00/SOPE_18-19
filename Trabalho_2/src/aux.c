@@ -60,14 +60,17 @@ void generateHash(char* password, char* salt, char* hashResult) {
         close(fd1[READ]);
         close(fd2[WRITE]);
 
+
+        char value[2000];
+
         // concatenates password and salt
-        hashResult[0] = '\0';
-        strcat(hashResult, password);
-        strcat(hashResult, salt);
-        int len = strlen(hashResult);
+        value[0] = '\0';
+        strcat(value, password);
+        strcat(value, salt);
+        int len = strlen(value);
 
         // sends it to coprocess
-        if(write(fd1[WRITE], hashResult, len) != len) {
+        if(write(fd1[WRITE], value, len) != len) {
             perror("Write to pipe");
             exit(EXIT_FAILURE);
         }
@@ -120,6 +123,18 @@ void generateHash(char* password, char* salt, char* hashResult) {
         perror("execlp");
         exit(EXIT_FAILURE);
     }
+}
+
+// ---------------------------------
+
+void initReply(tlv_request_t request, tlv_reply_t* reply) {
+    reply->type = request.type;
+    reply->value.header.account_id = request.value.header.account_id;
+    reply->length = sizeof(rep_header_t);
+
+    reply->value.balance.balance = 0;
+    reply->value.transfer.balance = 0;
+    reply->value.shutdown.active_offices = 0;
 }
 
 // ---------------------------------

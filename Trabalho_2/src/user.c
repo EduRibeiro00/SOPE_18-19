@@ -20,18 +20,34 @@
 #include "aux.h"
 #include "user.h"
 
+// global variables
+pid_t pid;
+int fdFifoUser;
+int fdFifoServer;
+int fdUserLogFile;
+char fifoName[500];
+tlv_reply_t replyMsg;
+
+// ---------------------------------
+
 int main(int argc, char* argv[]) {
 
     if(argc != 6) {
         fprintf(stderr, "Illegal use of arguments! Usage: %s <ID> <\"password\"> <op_delay> <op_code> <args> \n", argv[0]);
     }
 
+    // calls the handler installer, for SIGALRM
+    handlerInstaller();
+
     // opens (and creates, if necessary) user log file
-    // int userLogFile = open(USER_LOGFILE, O_WRONLY | O_CREAT, 0664);
+    fdUserLogFile = open(USER_LOGFILE, O_WRONLY | O_CREAT | O_APPEND, 0664);
+    if(fdUserLogFile == -1) {
+        perror("Open user log file");
+        exit(EXIT_FAILURE);
+    }
 
-    pid_t pid = getpid();
+    pid = getpid();
 
-    char fifoName[500];
     sprintf(fifoName, "%s%d", USER_FIFO_PATH_PREFIX, pid);
 
     // create user FIFO
@@ -208,58 +224,68 @@ int main(int argc, char* argv[]) {
     // build the request message, in TLV format
     tlvRequestMsg.value = msgValue;
 
+    // initializes reply message struct 
+    initReply(tlvRequestMsg, &replyMsg);
+
     // open server FIFO
-    int fdFifoServer = open(SERVER_FIFO_PATH, O_WRONLY);
+    fdFifoServer = open(SERVER_FIFO_PATH, O_WRONLY);
     if(fdFifoServer == -1) {
-        perror("Open server FIFO");
+        // perror("Open server FIFO");
+        // exit(EXIT_FAILURE);
+        replyMsg.value.header.ret_code = RC_SRV_DOWN;
+    }
+
+    // writes request in user log file
+    if(logRequest(fdUserLogFile, pid, &tlvRequestMsg) < 0) {
+        perror("Write in user log file");
         exit(EXIT_FAILURE);
     }
 
-    int totalLength = sizeof(op_type_t) + sizeof(uint32_t) + tlvRequestMsg.length;
-    int n;
+    if(replyMsg.value.header.ret_code !=  RC_SRV_DOWN) {
 
-    // send request to server program
-    if((n = write(fdFifoServer, &tlvRequestMsg, totalLength)) < 0) {
-        perror("Write request to server");
+        int totalLength = sizeof(op_type_t) + sizeof(uint32_t) + tlvRequestMsg.length;
+        int n;
+
+        // send request to server program
+        if((n = write(fdFifoServer, &tlvRequestMsg, totalLength)) < 0) {
+            perror("Write request to server");
+            exit(EXIT_FAILURE);
+        }
+
+        // SIGALRM is sent after FIFO_TIMEOUT_SECS, if server did not reply
+        alarm(FIFO_TIMEOUT_SECS);
+
+        // opens user FIFO
+        fdFifoUser = open(fifoName, O_RDONLY);
+        if(fdFifoUser == -1) {
+            //perror("Open user FIFO");
+            // exit(EXIT_FAILURE);
+        }
+
+        readReply(&replyMsg, fdFifoUser);
+
+        // cancels the alarm, because the reply was given before FIFO_TIMEOUT_SECS
+        alarm(0);
+
+        // close file descriptors
+        if(close(fdFifoUser) != 0) {
+            perror("close");
+            exit(EXIT_FAILURE);
+        }
+
+        if(close(fdFifoServer) != 0) {
+            perror("close");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // writes reply in user log file
+    if(logReply(fdUserLogFile, pid, &replyMsg) < 0) {
+        perror("Write in user log file");
         exit(EXIT_FAILURE);
     }
 
-    
-    // opens user FIFO
-    int fdFifoUser = open(fifoName, O_RDONLY);
-    if(fdFifoUser == -1) {
-        perror("Open user FIFO");
-        exit(EXIT_FAILURE);
-    }
-
-
-
-
-
-
-    // FALTA RECEBER RESPOSTA DO SERVER, ATRAVES DO USER FIFO
-    // (OU ACABAR O PROGRAMA PASSADOS FIFO_TIMEOUT_SECS)
-
-    tlv_reply_t replyMsg;
-    readReply(&replyMsg, fdFifoUser);
-
-    // ---
-    // so para testar
-    printReply(replyMsg);
-    // ---
-
-
-    // close and destroy file descriptors and user FIFO
-    if(close(fdFifoUser) != 0) {
-        perror("close");
-        exit(EXIT_FAILURE);
-    }
-
-    if(close(fdFifoServer) != 0) {
-        perror("close");
-        exit(EXIT_FAILURE);
-    }
-
+    // destroy user FIFO
     if(unlink(fifoName) != 0) {
         perror("unlink");
         exit(EXIT_FAILURE);
@@ -294,4 +320,55 @@ void readReply(tlv_reply_t* reply, int fdUserFifo) {
         exit(EXIT_FAILURE);
     }
 
+}
+
+// ---------------------------------
+
+void alarmHandler(int signo) {
+    if(signo == SIGALRM) {
+        replyMsg.value.header.ret_code = RC_SRV_TIMEOUT;
+
+        // close file descriptors
+        if(close(fdFifoUser) != 0) {
+            perror("close");
+            exit(EXIT_FAILURE);
+        }
+
+        if(close(fdFifoServer) != 0) {
+            perror("close");
+            exit(EXIT_FAILURE);
+        }
+
+        // writes reply in user log file
+        if(logReply(fdUserLogFile, pid, &replyMsg) < 0) {
+            perror("Write in user log file");
+            exit(EXIT_FAILURE);
+        }
+
+        // destroy user FIFO
+        if(unlink(fifoName) != 0) {
+            perror("unlink");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+// ---------------------------------
+
+void handlerInstaller() {
+
+    struct sigaction action;
+    action.sa_handler = alarmHandler;
+    
+    if(sigemptyset(&action.sa_mask) == -1) {
+        perror("sigemptyset");
+        exit(EXIT_FAILURE);
+    }
+
+    action.sa_flags = SA_RESTART;
+
+    if(sigaction(SIGALRM, &action, NULL) != 0) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
 }

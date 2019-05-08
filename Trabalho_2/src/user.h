@@ -23,3 +23,9 @@
 
 // reads from the user FIFO the reply
 void readReply(tlv_reply_t* reply, int fdUserFifo);
+
+// SIGALRM handler; for the user 
+void alarmHandler(int signo);
+
+// function that installs the SIGALRM signal handler
+void handlerInstaller();

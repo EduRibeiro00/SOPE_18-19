@@ -28,6 +28,7 @@ tlv_request_t requests[30];
 int bufferIn = 0, bufferOut = 0;
 
 int fdFifoServer;
+int fdServerLogFile;
 //--------------------------
 
 int main(int argc, char* argv[]) {
@@ -51,8 +52,14 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    srand(time(NULL));
+
     // opens (and creates, if necessary) server log file
-    // int serverLogFile = open(SERVER_LOGFILE, O_WRONLY | O_CREAT, 0664);
+    fdServerLogFile = open(SERVER_LOGFILE, O_WRONLY | O_CREAT | O_APPEND, 0664);
+    if(fdServerLogFile == -1) {
+        perror("Open server log file");
+        exit(EXIT_FAILURE);
+    }
 
     createAdminAccount(argv[2]);
 
@@ -69,6 +76,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
+
     int fdFifoServerDummy; // to avoid busy waiting
     int fdFifoUser;
 
@@ -82,15 +90,20 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    tlv_request_t request;
-    tlv_reply_t reply;
 
-    int i = 1; // TEMPORARIO; DEPOIS CICLO SO DEVE TERMINAR SE O PEDIDO FOR DE ENCERRAMENTO
-               // (MUDAR PERMISSOES DO FIFO SERVER PARA SO LEITURA)
-
-    // reads requests
+    // reads and handles the requests
     do {
+
+        tlv_request_t request;
+        tlv_reply_t reply;
+
         readRequest(&request);
+
+        if(logRequest(fdServerLogFile, 0, &request) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+
         handleRequest(request, &reply);
 
         char fifoNameUser[500];
@@ -98,21 +111,28 @@ int main(int argc, char* argv[]) {
 
         // opens user fifo to send reply message
         if((fdFifoUser = open(fifoNameUser, O_WRONLY)) == -1) {
-            perror("Open user FIFO to write");
+            // perror("Open user FIFO to write");
             reply.value.header.ret_code = RC_USR_DOWN;
-            // exit(EXIT_FAILURE);
         }
 
-        // sends reply
-        writeReply(&reply, fdFifoUser);
+        // sends reply (if user FIFO was open)
+        if(reply.value.header.ret_code != RC_USR_DOWN) {
+        
+            writeReply(&reply, fdFifoUser);
 
-        // closes user FIFO
-        if(close(fdFifoUser) != 0) {
-            perror("close");
+            // closes user FIFO
+            if(close(fdFifoUser) != 0) {
+                perror("close");
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        if(logReply(fdServerLogFile, 0, &reply) < 0) {
+            perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
 
-    } while(i);
+    } while(/*reply.type != OP_SHUTDOWN*/ 1); // (temporario; n e bem assim q deve ser feito no fim)
 
 
     if(close(fdFifoServer) != 0) {
@@ -217,6 +237,18 @@ void createAdminAccount(char* password) {
     }
 
     createAccount(ADMIN_ACCOUNT_ID, password, 0);
+
+    bank_account_t* adminAccount = getBankAccount(ADMIN_ACCOUNT_ID);
+    if(adminAccount != NULL) {
+        if(logAccountCreation(fdServerLogFile, MAIN_THREAD_ID, adminAccount) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+    }
+    else {
+        fprintf(stderr, "Admin account couldn't be created!\n");
+        exit(EXIT_FAILURE);
+    }
 }
 
 // ---------------------------------
@@ -244,6 +276,7 @@ void readRequest(tlv_request_t* request) {
         perror("Read request value");
         exit(EXIT_FAILURE);
     }
+
 }
 
 // ---------------------------------
@@ -257,8 +290,7 @@ void writeReply(tlv_reply_t* reply, int fdFifoUser) {
     // send request to server program
     if((n = write(fdFifoUser, reply, totalLength)) < 0) {
         perror("Write reply to user");
-        reply->value.header.ret_code = RC_USR_DOWN;
-        // exit(EXIT_FAILURE);
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -267,11 +299,9 @@ void writeReply(tlv_reply_t* reply, int fdFifoUser) {
 void handleRequest(tlv_request_t request, tlv_reply_t* reply) {
 
     // delay is in milisseconds; usleep() needs microsseconds
-    usleep(request.value.header.op_delay_ms * 1000);
+    usleep(request.value.header.op_delay_ms * 1000); // atraso nem sempre e aqui; dps tem de se mudar
 
-    reply->type = request.type;
-    reply->value.header.account_id = request.value.header.account_id;
-    reply->length = sizeof(rep_header_t);
+    initReply(request, reply);
 
     switch(request.type) {
 
@@ -331,6 +361,16 @@ void handleCreateAccount(req_value_t value, tlv_reply_t* reply) {
 
     createAccount(value.create.account_id, value.create.password, value.create.balance);
     reply->value.header.ret_code = RC_OK;
+
+    bank_account_t* newAccount = getBankAccount(value.create.account_id);
+    if(newAccount != NULL) {
+        if(logAccountCreation(fdServerLogFile, 0, newAccount) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+    }
+    else // for some reason, the account wasn't created sucessfully
+        reply->value.header.ret_code = RC_OTHER;
 }
 
 // ---------------------------------
@@ -373,51 +413,57 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply) {
         return;
     }
 
+    reply->value.header.ret_code = RC_OK;
 
+    // checks if the source account is admin
     if(isAdmin(value.header.account_id)) {
         printf("User is admin; can't perform this operation!\n");
         reply->value.header.ret_code = RC_OP_NALLOW;
-        return;
     }
 
-    bank_account_t* sourceAccount = getBankAccount(value.header.account_id);
-    bank_account_t* destAccount = getBankAccount(value.transfer.account_id);
-    
+    if(reply->value.header.ret_code != RC_OP_NALLOW) {
 
-    reply->value.header.ret_code = RC_OK;
+        bank_account_t* sourceAccount = getBankAccount(value.header.account_id);
+        bank_account_t* destAccount = getBankAccount(value.transfer.account_id);
 
-    if(destAccount == NULL) {
-        printf("Destination account doesn't exist!\n");
-        reply->value.header.ret_code = RC_ID_NOT_FOUND;
+
+        if(destAccount == NULL) {
+            printf("Destination account doesn't exist!\n");
+            reply->value.header.ret_code = RC_ID_NOT_FOUND;
+        }
+
+        if((reply->value.header.ret_code == RC_OK) && (value.header.account_id == value.transfer.account_id)) {
+            printf("The accounts are the same! Transfer not possible\n");
+            reply->value.header.ret_code = RC_SAME_ID;
+        }
+
+        if((reply->value.header.ret_code == RC_OK) && (sourceAccount->balance < value.transfer.amount)) {
+            printf("Not enough money to complete the transfer!\n");
+            reply->value.header.ret_code = RC_NO_FUNDS;
+        }
+
+        if((reply->value.header.ret_code == RC_OK) && (destAccount != NULL && destAccount->balance + value.transfer.amount > MAX_BALANCE)) {
+            printf("The destination account's balance would be too high!\n");
+            reply->value.header.ret_code = RC_TOO_HIGH;
+        }
+
+
+        if(reply->value.header.ret_code == RC_OK)
+            transferAmount(sourceAccount, destAccount, value.transfer.amount);
+
     }
 
+    if(reply->value.header.ret_code == RC_OK) {
+        uint32_t balance;
 
-    if(value.header.account_id == value.transfer.account_id) {
-        printf("The accounts are the same! Transfer not possible\n");
-        reply->value.header.ret_code = RC_SAME_ID;
+        // will always return true because if autentication was sucessful, means that account exists
+        getBalanceFromAccount(value.header.account_id, &balance);
+
+        reply->value.transfer.balance = balance;
     }
+    else
+        reply->value.transfer.balance = value.transfer.amount;
 
-
-    if(sourceAccount->balance < value.transfer.amount) {
-        printf("Not enough money to complete the transfer!\n");
-        reply->value.header.ret_code = RC_NO_FUNDS;
-    }
-
-
-    if(destAccount != NULL && destAccount->balance + value.transfer.amount > MAX_BALANCE) {
-        printf("The destination account's balance would be too high!\n");
-        reply->value.header.ret_code = RC_TOO_HIGH;
-    }
-
-    if(reply->value.header.ret_code == RC_OK)
-        transferAmount(sourceAccount, destAccount, value.transfer.amount);
-
-    uint32_t balance;
-
-    // will always return true because if autentication was sucessful, means that account exists
-    getBalanceFromAccount(value.header.account_id, &balance);
-
-    reply->value.transfer.balance = balance;
     reply->length += sizeof(rep_transfer_t);
 }
 
