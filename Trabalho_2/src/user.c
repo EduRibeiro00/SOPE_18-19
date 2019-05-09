@@ -70,7 +70,8 @@ int main(int argc, char* argv[]) {
     msgHeader.op_delay_ms = atoi(argv[3]);
 
     // check if ID is in the valid range (if it is not, it will never correspond to an account)
-    if(msgHeader.account_id < ADMIN_ACCOUNT_ID || msgHeader.account_id >= MAX_BANK_ACCOUNTS) {
+    // NOTE: because it is an unsigned integer, it can never be less than 0
+    if(msgHeader.account_id >= MAX_BANK_ACCOUNTS) {
         printf("Account ID is not in the valid range!\n");
         exit(EXIT_FAILURE);
     }
@@ -258,8 +259,8 @@ int main(int argc, char* argv[]) {
         // opens user FIFO
         fdFifoUser = open(fifoName, O_RDONLY);
         if(fdFifoUser == -1) {
-            //perror("Open user FIFO");
-            // exit(EXIT_FAILURE);
+            perror("Open user FIFO");
+            exit(EXIT_FAILURE);
         }
 
         readReply(&replyMsg, fdFifoUser);
@@ -302,21 +303,21 @@ void readReply(tlv_reply_t* reply, int fdUserFifo) {
 
     // reads request type
     if((n = read(fdUserFifo, &(reply->type), sizeof(op_type_t))) < 0) {
-        perror("Read request type");
+        perror("Read reply type");
         exit(EXIT_FAILURE);
     }
 
 
     // reads request length
     if((n = read(fdUserFifo, &(reply->length), sizeof(uint32_t))) < 0) {
-        perror("Read request length");
+        perror("Read reply length");
         exit(EXIT_FAILURE);
     }
 
 
     // reads request value
     if((n = read(fdUserFifo, &(reply->value), reply->length)) < 0) {
-        perror("Read request value");
+        perror("Read reply value");
         exit(EXIT_FAILURE);
     }
 
@@ -350,6 +351,9 @@ void alarmHandler(int signo) {
             perror("unlink");
             exit(EXIT_FAILURE);
         }
+
+        // exit the program
+        exit(0);
     }
 }
 
