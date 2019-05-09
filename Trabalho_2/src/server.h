@@ -21,8 +21,15 @@
 #include "types.h"
 #include "aux.h"
 
-// creates the threads in the beginning
-// int createThreads(pthread_t* tids, int numThreads);
+// macro that defines the maximum number of requests that can be store in the requests array
+#define MAX_REQUESTS    30
+
+// creates the threads (bank offices) in the beginning
+void createBankOffices(bank_office_t* bankOffices, int numThreads);
+
+// closes the bank offices
+void closeBankOffices(bank_office_t* bankOffices, int numThreads);
+
 
 // checks if a password that a user send the server is valid
 bool checkPassword(uint32_t id, char* password);
@@ -74,3 +81,14 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply);
 
 // handles a "shutdown" request
 void handleShutdown(req_value_t value, tlv_reply_t* reply);
+
+
+// struct to keep the information about the bank offices (threads) created
+typedef struct bank_office {
+    pthread_t tid;
+    int id;
+} bank_office_t;
+
+
+// thread function; gets the requests from the array, processes them, and sends the result to the user
+void* bankOfficeFunction(void* arg);

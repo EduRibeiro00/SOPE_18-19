@@ -24,28 +24,16 @@
 bank_account_t accounts[MAX_BANK_ACCOUNTS];
 int numAccounts = 0;
 
-tlv_request_t requests[30];
+tlv_request_t requests[MAX_REQUESTS];
 int bufferIn = 0, bufferOut = 0;
+
+int shutdownFlag = 0; // turns 1 when received a shutdown request
 
 int fdFifoServer;
 int fdServerLogFile;
 //--------------------------
 
 int main(int argc, char* argv[]) {
-
-// -----------------------
-// parte de teste
-
-    /*accounts[0].account_id = 0;
-    strcpy(accounts[0].hash, "1960ac94c29be96599d4ee2d111221344ba9583d073e42d51a965a5020502489");
-    strcpy(accounts[0].salt, "12345fba213acb2");
-
-
-    if(checkPassword(0, "ola123"))
-        printf("passou\n");
-    else printf("nao passou\n");*/
-
-// ------------------------
 
     if(argc != 3) {
         fprintf(stderr, "Illegal use of arguments! Usage: %s <numThreads> <adminPass>\n", argv[0]);
@@ -63,9 +51,11 @@ int main(int argc, char* argv[]) {
 
     createAdminAccount(argv[2]);
 
-    // ---------------
-    // FAZER OS THREADS DEPOIS
-    // ---------------
+    // thread creation
+    int numBankOffices = atoi(argv[1]);
+    bank_office_t bankOffices[numBankOffices];
+    createBankOffices(bankOffices, numBankOffices);
+
 
     if(mkfifo(SERVER_FIFO_PATH, 0666) < 0) {
         if(errno == EEXIST) 
@@ -78,7 +68,6 @@ int main(int argc, char* argv[]) {
 
 
     int fdFifoServerDummy; // to avoid busy waiting
-    int fdFifoUser;
 
     if((fdFifoServer = open(SERVER_FIFO_PATH, O_RDONLY)) == -1) {
         perror("Open server FIFO to read");
@@ -91,49 +80,23 @@ int main(int argc, char* argv[]) {
     }
 
 
-    // reads and handles the requests
+    // reads the requests and sends them to the request queue
     do {
 
-        tlv_request_t request;
-        tlv_reply_t reply;
+        // reads the request from a user, and sends it to the request queue
+        readRequest(&requests[bufferIn]);
 
-        readRequest(&request);
-
-        if(logRequest(fdServerLogFile, 0, &request) < 0) {
+        if(logRequest(fdServerLogFile, MAIN_THREAD_ID, &requests[bufferIn]) < 0) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
 
-        handleRequest(request, &reply);
+        bufferIn = (bufferIn + 1) % MAX_REQUESTS;
 
-        char fifoNameUser[500];
-        sprintf(fifoNameUser, "%s%d", USER_FIFO_PATH_PREFIX, request.value.header.pid);
+    } while(!shutdownFlag); // (temporario; n e bem assim q deve ser feito no fim) (?)
 
-        // opens user fifo to send reply message
-        if((fdFifoUser = open(fifoNameUser, O_WRONLY)) == -1) {
-            // perror("Open user FIFO to write");
-            reply.value.header.ret_code = RC_USR_DOWN;
-        }
 
-        // sends reply (if user FIFO was open)
-        if(reply.value.header.ret_code != RC_USR_DOWN) {
-        
-            writeReply(&reply, fdFifoUser);
-
-            // closes user FIFO
-            if(close(fdFifoUser) != 0) {
-                perror("close");
-                exit(EXIT_FAILURE);
-            }
-        }
-
-        if(logReply(fdServerLogFile, 0, &reply) < 0) {
-            perror("Write in server log file");
-            exit(EXIT_FAILURE);
-        }
-
-    } while(/*reply.type != OP_SHUTDOWN*/ 1); // (temporario; n e bem assim q deve ser feito no fim)
-
+    closeBankOffices(bankOffices, numBankOffices);
 
     if(close(fdFifoServer) != 0) {
         perror("close");
@@ -155,12 +118,33 @@ int main(int argc, char* argv[]) {
 
 // ---------------------------------
 
-// int createThreads(pthread_t* tids, int numThreads) {
+void createBankOffices(bank_office_t* bankOffices, int numThreads) {
 
-//     for(int i = 0; i < numThreads; i++) {
-//         // pthread_create(&tids[i], NULL, func, arg);
-//     }
-// }
+    for(int i = 0; i < numThreads; i++) {
+        bankOffices[i].id = i + 1;
+        pthread_create(&bankOffices[i].tid, NULL, bankOfficeFunction, &bankOffices[i].id);
+
+        if(logBankOfficeOpen(fdServerLogFile, bankOffices[i].id, bankOffices[i].tid) < 0) {
+            perror("write to server log file");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+// ---------------------------------
+
+void closeBankOffices(bank_office_t* bankOffices, int numThreads) {
+
+    for(int i = 0; i < numThreads; i++) {
+        
+        pthread_join(bankOffices[i].tid, NULL);
+
+        if(logBankOfficeClose(fdServerLogFile, bankOffices[i].id, bankOffices[i].tid) < 0) {
+            perror("write to server log file");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
 
 // ---------------------------------
 
@@ -298,9 +282,6 @@ void writeReply(tlv_reply_t* reply, int fdFifoUser) {
 
 void handleRequest(tlv_request_t request, tlv_reply_t* reply) {
 
-    // delay is in milisseconds; usleep() needs microsseconds
-    usleep(request.value.header.op_delay_ms * 1000); // atraso nem sempre e aqui; dps tem de se mudar
-
     initReply(request, reply);
 
     switch(request.type) {
@@ -329,6 +310,9 @@ void handleRequest(tlv_request_t request, tlv_reply_t* reply) {
 // ---------------------------------
 
 void handleCreateAccount(req_value_t value, tlv_reply_t* reply) {
+
+    // delay is in milisseconds; usleep() needs microsseconds
+    usleep(value.header.op_delay_ms * 1000); // LOGO DEPOIS DE TER ACESSO EXCLUSIVO A CONTA
 
     // autentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
@@ -377,6 +361,9 @@ void handleCreateAccount(req_value_t value, tlv_reply_t* reply) {
 
 void handleCheckBalance(req_value_t value, tlv_reply_t* reply) {
 
+    // delay is in milisseconds; usleep() needs microsseconds
+    usleep(value.header.op_delay_ms * 1000); // LOGO DEPOIS DE TER ACESSO EXCLUSIVO A CONTA
+
     // autentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
         printf("The id and password combination is invalid.\n");
@@ -406,6 +393,10 @@ void handleCheckBalance(req_value_t value, tlv_reply_t* reply) {
 
 void handleTransfer(req_value_t value, tlv_reply_t* reply) {
     
+    // delay is in milisseconds; usleep() needs microsseconds
+    usleep(value.header.op_delay_ms * 1000); // LOGO DEPOIS DE TER ACESSO EXCLUSIVO A CONTA
+    // ^^ ATENCAO, AQUI E LIGEIRAMENTE DIFERENTE PORQUE USAM SE DUAS CONTAS
+
     // autentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
         printf("The id and password combination is invalid.\n");
@@ -486,6 +477,9 @@ void handleShutdown(req_value_t value, tlv_reply_t* reply) {
         return;
     }
 
+    // delay is in milisseconds; usleep() needs microsseconds
+    usleep(value.header.op_delay_ms * 1000); // ANTES DE IMPEDIR QUE SE RECEBA MAIS PEDIDOS
+
     // changes FIFO permissions to read only, to avoid receiving new requests
     if(fchmod(fdFifoServer, S_IRUSR | S_IRGRP | S_IROTH ) < 0) {
         perror("fchmod");
@@ -499,6 +493,8 @@ void handleShutdown(req_value_t value, tlv_reply_t* reply) {
     // RETORNAR TAMBEM O NUMERO DE THREADS ATIVAS (A PROCESSAR UM PEDIDO) NO MOMENTO DO ENVIO.
     reply->value.shutdown.active_offices = 1; // por agora fica 1, como valor de teste
     reply->length += sizeof(rep_shutdown_t);
+
+    shutdownFlag = 1;
 }
 
 // ---------------------------------
@@ -530,4 +526,55 @@ void transferAmount(bank_account_t* sourceAccount, bank_account_t* destAccount, 
 
 bool isAdmin(uint32_t id) {
     return id == ADMIN_ACCOUNT_ID;
+}
+
+// ---------------------------------
+
+void* bankOfficeFunction(void* arg) {
+
+    int bankOfficeId = *(int*) arg;
+
+    while(!shutdownFlag) {
+        
+        tlv_request_t currentRequest = requests[bufferOut];
+        bufferOut = (bufferOut + 1) % MAX_REQUESTS;
+
+        tlv_reply_t reply;
+
+        if(logRequest(fdServerLogFile, MAIN_THREAD_ID, &currentRequest) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+
+        handleRequest(currentRequest, &reply);
+
+        char fifoNameUser[500];
+        sprintf(fifoNameUser, "%s%d", USER_FIFO_PATH_PREFIX, currentRequest.value.header.pid);
+
+        int fdFifoUser;
+
+        // opens user fifo to send reply message
+        if((fdFifoUser = open(fifoNameUser, O_WRONLY)) == -1) {
+            // perror("Open user FIFO to write");
+            reply.value.header.ret_code = RC_USR_DOWN;
+        }
+
+        // sends reply (if user FIFO was open)
+        if(reply.value.header.ret_code != RC_USR_DOWN) {
+        
+            writeReply(&reply, fdFifoUser);
+
+            // closes user FIFO
+            if(close(fdFifoUser) != 0) {
+                perror("close");
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        if(logReply(fdServerLogFile, bankOfficeId, &reply) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+
+    }
 }
