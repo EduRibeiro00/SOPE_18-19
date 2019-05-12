@@ -24,6 +24,13 @@
 // macro that defines the maximum number of requests that can be store in the requests array
 #define MAX_REQUESTS    30
 
+// struct to keep the information about the bank offices (threads) created
+typedef struct bank_office {
+    pthread_t tid;
+    int id;
+} bank_office_t;
+
+
 // creates the threads (bank offices) in the beginning
 void createBankOffices(bank_office_t* bankOffices, int numThreads);
 
@@ -68,27 +75,33 @@ void transferAmount(bank_account_t* sourceAccount, bank_account_t* destAccount, 
 
 
 // handles and fulfills a user request
-void handleRequest(tlv_request_t request, tlv_reply_t* reply);
+void handleRequest(tlv_request_t request, tlv_reply_t* reply, int bankOfficeId);
 
 // handles a "create account" request
-void handleCreateAccount(req_value_t value, tlv_reply_t* reply);
+void handleCreateAccount(req_value_t value, tlv_reply_t* reply, int bankOfficeId);
 
 // handles a "check balance" request
-void handleCheckBalance(req_value_t value, tlv_reply_t* reply);
+void handleCheckBalance(req_value_t value, tlv_reply_t* reply, int bankOfficeId);
 
 //handles a "transfer" request
-void handleTransfer(req_value_t value, tlv_reply_t* reply); 
+void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId); 
 
 // handles a "shutdown" request
-void handleShutdown(req_value_t value, tlv_reply_t* reply);
+void handleShutdown(req_value_t value, tlv_reply_t* reply, int bankOfficeId);
 
-
-// struct to keep the information about the bank offices (threads) created
-typedef struct bank_office {
-    pthread_t tid;
-    int id;
-} bank_office_t;
 
 
 // thread function; gets the requests from the array, processes them, and sends the result to the user
 void* bankOfficeFunction(void* arg);
+
+// synchronization function related to the buffer slots; to be used by the main thread
+void syncSlotsMainThread();
+
+// synchronization function related to the buffer items; to be used by the main thread
+void syncItemsMainThread(int requestPid);
+
+// synchronization function related to the buffer slots; to be used by the bank offices (threads)
+void syncSlotsBankOffice(int bankOfficeId, int requestPid);
+
+// synchronization function related to the buffer items; to be used by the bank offices (threads)
+void syncItemsBankOffice(int bankOfficeId);

@@ -13,6 +13,7 @@
 #include <string.h>
 #include <time.h>
 #include <signal.h>
+#include <pthread.h>
 
 #include "constants.h"
 #include "sope.h"
@@ -25,12 +26,22 @@ bank_account_t accounts[MAX_BANK_ACCOUNTS];
 int numAccounts = 0;
 
 tlv_request_t requests[MAX_REQUESTS];
-int bufferIn = 0, bufferOut = 0;
+int bufferIn = 0, bufferOut = 0, items = 0, slots = MAX_REQUESTS;
 
 int shutdownFlag = 0; // turns 1 when received a shutdown request
 
 int fdFifoServer;
 int fdServerLogFile;
+
+// sync mechanisms - producer/consumer
+pthread_mutex_t buffer_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t slots_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t slots_cond = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t items_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t items_cond = PTHREAD_COND_INITIALIZER;
+
+// sync mechanisms - bank account array - one mutex per account (ex: mutex for account with id 2 is in index 2 of this array)
+pthread_mutex_t accountMutexes[MAX_BANK_ACCOUNTS];
 //--------------------------
 
 int main(int argc, char* argv[]) {
@@ -48,6 +59,10 @@ int main(int argc, char* argv[]) {
         perror("Open server log file");
         exit(EXIT_FAILURE);
     }
+
+    // initialize account mutexes
+    for(int i = 0; i < MAX_BANK_ACCOUNTS; i++)
+        pthread_mutex_init(&accountMutexes[i], NULL);
 
     createAdminAccount(argv[2]);
 
@@ -82,9 +97,19 @@ int main(int argc, char* argv[]) {
 
     // reads the requests and sends them to the request queue
     do {
+        syncSlotsMainThread();
+
+        // tries to gain access to the buffer
+        pthread_mutex_lock(&buffer_lock);
+
+        if(logSyncMech(fdServerLogFile, MAIN_THREAD_ID, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_PRODUCER, 0) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
 
         // reads the request from a user, and sends it to the request queue
         readRequest(&requests[bufferIn]);
+        int requestPid = requests[bufferIn].value.header.pid;
 
         if(logRequest(fdServerLogFile, MAIN_THREAD_ID, &requests[bufferIn]) < 0) {
             perror("Write in server log file");
@@ -92,6 +117,15 @@ int main(int argc, char* argv[]) {
         }
 
         bufferIn = (bufferIn + 1) % MAX_REQUESTS;
+
+        pthread_mutex_unlock(&buffer_lock);
+
+        if(logSyncMech(fdServerLogFile, MAIN_THREAD_ID, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_PRODUCER, requestPid) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+
+        syncItemsMainThread(requestPid);
 
     } while(!shutdownFlag); // (temporario; n e bem assim q deve ser feito no fim) (?)
 
@@ -114,6 +148,77 @@ int main(int argc, char* argv[]) {
     }
 
     return 0;
+}
+
+// ---------------------------------
+
+void* bankOfficeFunction(void* arg) {
+
+    int bankOfficeId = *(int*) arg;
+
+    while(!shutdownFlag) {
+        
+        syncItemsBankOffice(bankOfficeId);
+
+        pthread_mutex_lock(&buffer_lock);
+
+        if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_CONSUMER, 0) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+
+        tlv_request_t currentRequest = requests[bufferOut];
+        bufferOut = (bufferOut + 1) % MAX_REQUESTS;
+
+        pthread_mutex_unlock(&buffer_lock);
+
+        if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_CONSUMER, currentRequest.value.header.pid) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+
+        if(logRequest(fdServerLogFile, bankOfficeId, &currentRequest) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+
+        syncSlotsBankOffice(bankOfficeId, currentRequest.value.header.pid);
+
+        tlv_reply_t reply;
+
+        handleRequest(currentRequest, &reply, bankOfficeId);
+
+        char fifoNameUser[500];
+        sprintf(fifoNameUser, "%s%d", USER_FIFO_PATH_PREFIX, currentRequest.value.header.pid);
+
+        int fdFifoUser;
+
+        // opens user fifo to send reply message
+        if((fdFifoUser = open(fifoNameUser, O_WRONLY)) == -1) {
+            // perror("Open user FIFO to write");
+            reply.value.header.ret_code = RC_USR_DOWN;
+        }
+
+        // sends reply (if user FIFO was open)
+        if(reply.value.header.ret_code != RC_USR_DOWN) {
+        
+            writeReply(&reply, fdFifoUser);
+
+            // closes user FIFO
+            if(close(fdFifoUser) != 0) {
+                perror("close");
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        if(logReply(fdServerLogFile, bankOfficeId, &reply) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+
+    }
+
+    pthread_exit(NULL);
 }
 
 // ---------------------------------
@@ -280,26 +385,26 @@ void writeReply(tlv_reply_t* reply, int fdFifoUser) {
 
 // ---------------------------------
 
-void handleRequest(tlv_request_t request, tlv_reply_t* reply) {
+void handleRequest(tlv_request_t request, tlv_reply_t* reply, int bankOfficeId) {
 
     initReply(request, reply);
 
     switch(request.type) {
 
         case OP_CREATE_ACCOUNT:
-            handleCreateAccount(request.value, reply);
+            handleCreateAccount(request.value, reply, bankOfficeId);
             break;
 
         case OP_BALANCE:
-            handleCheckBalance(request.value, reply);
+            handleCheckBalance(request.value, reply, bankOfficeId);
             break;
 
         case OP_TRANSFER:
-            handleTransfer(request.value, reply);
+            handleTransfer(request.value, reply, bankOfficeId);
             break;     
 
         case OP_SHUTDOWN:
-            handleShutdown(request.value, reply);
+            handleShutdown(request.value, reply, bankOfficeId);
             break;
 
         default:
@@ -309,10 +414,10 @@ void handleRequest(tlv_request_t request, tlv_reply_t* reply) {
 
 // ---------------------------------
 
-void handleCreateAccount(req_value_t value, tlv_reply_t* reply) {
+void handleCreateAccount(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
 
     // delay is in milisseconds; usleep() needs microsseconds
-    usleep(value.header.op_delay_ms * 1000); // LOGO DEPOIS DE TER ACESSO EXCLUSIVO A CONTA
+    usleep(value.header.op_delay_ms * 1000); // LOGO DEPOIS DE TER ACESSO EXCLUSIVO A CONTA (AS CONTAS? SERA TB PRECISO ACESSO EXCLUSIVO PARA A NOVA CONTA)
 
     // autentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
@@ -359,10 +464,22 @@ void handleCreateAccount(req_value_t value, tlv_reply_t* reply) {
 
 // ---------------------------------
 
-void handleCheckBalance(req_value_t value, tlv_reply_t* reply) {
+void handleCheckBalance(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
+
+    pthread_mutex_lock(&accountMutexes[value.header.account_id]);
+
+    if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_ACCOUNT, value.header.account_id) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
 
     // delay is in milisseconds; usleep() needs microsseconds
-    usleep(value.header.op_delay_ms * 1000); // LOGO DEPOIS DE TER ACESSO EXCLUSIVO A CONTA
+    usleep(value.header.op_delay_ms * 1000);
+
+    if(logSyncDelay(fdServerLogFile, bankOfficeId, value.header.account_id, value.header.op_delay_ms) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
 
     // autentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
@@ -384,6 +501,15 @@ void handleCheckBalance(req_value_t value, tlv_reply_t* reply) {
     // will always return true because if autentication was sucessful, means that account exists
     getBalanceFromAccount(value.header.account_id, &balance);
 
+
+    pthread_mutex_unlock(&accountMutexes[value.header.account_id]);
+
+    if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_ACCOUNT, value.header.account_id) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+
     reply->value.header.ret_code = RC_OK;
     reply->value.balance.balance = balance;
     reply->length += sizeof(rep_balance_t);    
@@ -391,7 +517,7 @@ void handleCheckBalance(req_value_t value, tlv_reply_t* reply) {
 
 // ---------------------------------
 
-void handleTransfer(req_value_t value, tlv_reply_t* reply) {
+void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
     
     // delay is in milisseconds; usleep() needs microsseconds
     usleep(value.header.op_delay_ms * 1000); // LOGO DEPOIS DE TER ACESSO EXCLUSIVO A CONTA
@@ -460,7 +586,7 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply) {
 
 // ---------------------------------
 
-void handleShutdown(req_value_t value, tlv_reply_t* reply) {
+void handleShutdown(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
 
     // autentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
@@ -530,51 +656,117 @@ bool isAdmin(uint32_t id) {
 
 // ---------------------------------
 
-void* bankOfficeFunction(void* arg) {
+void syncSlotsMainThread() {
 
-    int bankOfficeId = *(int*) arg;
+    // tries to gain access to a slot
+    pthread_mutex_lock(&slots_lock);
+    
+    if(logSyncMech(fdServerLogFile, MAIN_THREAD_ID, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_PRODUCER, 0) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
 
-    while(!shutdownFlag) {
-        
-        tlv_request_t currentRequest = requests[bufferOut];
-        bufferOut = (bufferOut + 1) % MAX_REQUESTS;
-
-        tlv_reply_t reply;
-
-        if(logRequest(fdServerLogFile, MAIN_THREAD_ID, &currentRequest) < 0) {
+    // has to wait if there are no slots available
+    while(slots <= 0) {
+        pthread_cond_wait(&slots_cond, &slots_lock);
+    
+        if(logSyncMech(fdServerLogFile, MAIN_THREAD_ID, SYNC_OP_COND_WAIT, SYNC_ROLE_PRODUCER, 0) < 0) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
+    }
+    
+    slots--;
+    pthread_mutex_unlock(&slots_lock);
 
-        handleRequest(currentRequest, &reply);
+    if(logSyncMech(fdServerLogFile, MAIN_THREAD_ID, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_PRODUCER, 0) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+}
 
-        char fifoNameUser[500];
-        sprintf(fifoNameUser, "%s%d", USER_FIFO_PATH_PREFIX, currentRequest.value.header.pid);
+// ---------------------------------
 
-        int fdFifoUser;
+void syncItemsMainThread(int requestPid) {
 
-        // opens user fifo to send reply message
-        if((fdFifoUser = open(fifoNameUser, O_WRONLY)) == -1) {
-            // perror("Open user FIFO to write");
-            reply.value.header.ret_code = RC_USR_DOWN;
-        }
+    // release right to an item
+    pthread_mutex_lock(&items_lock);
 
-        // sends reply (if user FIFO was open)
-        if(reply.value.header.ret_code != RC_USR_DOWN) {
+    if(logSyncMech(fdServerLogFile, MAIN_THREAD_ID, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_PRODUCER, requestPid) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+    items++;
+    pthread_cond_signal(&items_cond);
+
+    if(logSyncMech(fdServerLogFile, MAIN_THREAD_ID, SYNC_OP_COND_SIGNAL, SYNC_ROLE_PRODUCER, requestPid) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+    pthread_mutex_unlock(&items_lock);
+
+    if(logSyncMech(fdServerLogFile, MAIN_THREAD_ID, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_PRODUCER, requestPid) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+}
+
+// ---------------------------------
+
+void syncSlotsBankOffice(int bankOfficeId, int requestPid) {
+
+    // release a slot space
+    pthread_mutex_lock(&slots_lock);
+
+    if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_CONSUMER, requestPid) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+    slots++;
+    pthread_cond_signal(&slots_cond);
+
+    if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_COND_SIGNAL, SYNC_ROLE_CONSUMER, requestPid) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+    pthread_mutex_unlock(&slots_lock);
+
+    if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_CONSUMER, requestPid) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+}
+
+// ---------------------------------
+
+void syncItemsBankOffice(int bankOfficeId) {
+
+    pthread_mutex_lock(&items_lock);
+
+    if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_CONSUMER, 0) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+    // waits until there are requests to collect and process
+    while(items <= 0) {
+        pthread_cond_wait(&items_cond, &items_lock);
         
-            writeReply(&reply, fdFifoUser);
-
-            // closes user FIFO
-            if(close(fdFifoUser) != 0) {
-                perror("close");
-                exit(EXIT_FAILURE);
-            }
-        }
-
-        if(logReply(fdServerLogFile, bankOfficeId, &reply) < 0) {
+        if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_COND_WAIT, SYNC_ROLE_CONSUMER, 0) < 0) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
+    }
 
+    items--;
+    pthread_mutex_unlock(&items_lock);
+
+    if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_CONSUMER, 0) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
     }
 }
