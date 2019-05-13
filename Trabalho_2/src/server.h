@@ -28,6 +28,7 @@
 typedef struct bank_office {
     pthread_t tid;
     int id;
+    bool processing;
 } bank_office_t;
 
 
@@ -36,7 +37,6 @@ void createBankOffices(bank_office_t* bankOffices, int numThreads);
 
 // closes the bank offices
 void closeBankOffices(bank_office_t* bankOffices, int numThreads);
-
 
 // checks if a password that a user send the server is valid
 bool checkPassword(uint32_t id, char* password);
@@ -52,6 +52,9 @@ bool getHashFromAccount(uint32_t id, char* hash);
 
 // returns balance from account; returns false if account doesn't exist
 bool getBalanceFromAccount(uint32_t id, uint32_t* balance);
+
+// sets value of account processing flag to given argument
+void setAccountProcessingFlag(uint32_t id, bool value);
 
 // creates the admin account, in the beginning of the program
 void createAdminAccount(char* password);

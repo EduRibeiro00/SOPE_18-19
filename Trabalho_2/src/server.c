@@ -227,6 +227,7 @@ void createBankOffices(bank_office_t* bankOffices, int numThreads) {
 
     for(int i = 0; i < numThreads; i++) {
         bankOffices[i].id = i + 1;
+        bankOffices[i].processing = false;
         pthread_create(&bankOffices[i].tid, NULL, bankOfficeFunction, &bankOffices[i].id);
 
         if(logBankOfficeOpen(fdServerLogFile, bankOffices[i].id, bankOffices[i].tid) < 0) {
@@ -419,7 +420,12 @@ void handleCreateAccount(req_value_t value, tlv_reply_t* reply, int bankOfficeId
     // delay is in milisseconds; usleep() needs microsseconds
     usleep(value.header.op_delay_ms * 1000); // LOGO DEPOIS DE TER ACESSO EXCLUSIVO A CONTA (AS CONTAS? SERA TB PRECISO ACESSO EXCLUSIVO PARA A NOVA CONTA)
 
-    // autentication
+    if (logSyncDelay(fdServerLogFile, bankOfficeId, value.header.account_id, value.header.op_delay_ms) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+    // authentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
         printf("The id and password combination is invalid.\n");
         reply->value.header.ret_code = RC_LOGIN_FAIL;
@@ -453,7 +459,8 @@ void handleCreateAccount(req_value_t value, tlv_reply_t* reply, int bankOfficeId
 
     bank_account_t* newAccount = getBankAccount(value.create.account_id);
     if(newAccount != NULL) {
-        if(logAccountCreation(fdServerLogFile, 0, newAccount) < 0) {
+        if (logAccountCreation(fdServerLogFile, bankOfficeId, newAccount) < 0) {
+        // if(logAccountCreation(fdServerLogFile, 0, newAccount) < 0) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
@@ -481,14 +488,12 @@ void handleCheckBalance(req_value_t value, tlv_reply_t* reply, int bankOfficeId)
         exit(EXIT_FAILURE);
     }
 
-    // autentication
+    // authentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
         printf("The id and password combination is invalid.\n");
         reply->value.header.ret_code = RC_LOGIN_FAIL;
         return;
     }
-
-
 
     if(isAdmin(value.header.account_id)) {
         printf("User is admin; can't perform this operation!\n");
@@ -498,7 +503,7 @@ void handleCheckBalance(req_value_t value, tlv_reply_t* reply, int bankOfficeId)
         
     uint32_t balance;
 
-    // will always return true because if autentication was sucessful, means that account exists
+    // will always return true because if authentication was sucessful, means that account exists
     getBalanceFromAccount(value.header.account_id, &balance);
 
 
@@ -519,18 +524,46 @@ void handleCheckBalance(req_value_t value, tlv_reply_t* reply, int bankOfficeId)
 
 void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
     
-    // delay is in milisseconds; usleep() needs microsseconds
-    usleep(value.header.op_delay_ms * 1000); // LOGO DEPOIS DE TER ACESSO EXCLUSIVO A CONTA
-    // ^^ ATENCAO, AQUI E LIGEIRAMENTE DIFERENTE PORQUE USAM SE DUAS CONTAS
+    // gaining access to first account
+    pthread_mutex_lock(&accountMutexes[value.header.account_id]);
 
-    // autentication
+    if (logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_ACCOUNT, value.header.account_id) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+    // -- delay is in milisseconds; usleep() needs microsseconds
+    usleep(value.header.op_delay_ms * 1000);
+
+    if (logSyncDelay(fdServerLogFile, bankOfficeId, value.header.account_id, value.header.op_delay_ms) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+    // DONE
+
+    // gaining access to second account
+    pthread_mutex_lock(&accountMutexes[value.transfer.account_id]);
+
+    if (logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_ACCOUNT, value.transfer.account_id) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+    // -- delay is in milisseconds; usleep() needs microsseconds
+    usleep(value.header.op_delay_ms * 1000);
+
+    if (logSyncDelay(fdServerLogFile, bankOfficeId, value.transfer.account_id, value.header.op_delay_ms) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+    // DONE
+
+    // authentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
         printf("The id and password combination is invalid.\n");
         reply->value.header.ret_code = RC_LOGIN_FAIL;
         return;
     }
-
-    reply->value.header.ret_code = RC_OK;
 
     // checks if the source account is admin
     if(isAdmin(value.header.account_id)) {
@@ -573,14 +606,30 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
     if(reply->value.header.ret_code == RC_OK) {
         uint32_t balance;
 
-        // will always return true because if autentication was sucessful, means that account exists
+        // will always return true because if authentication was sucessful, means that account exists
         getBalanceFromAccount(value.header.account_id, &balance);
 
         reply->value.transfer.balance = balance;
     }
-    else
+    else {
         reply->value.transfer.balance = value.transfer.amount;
+    }
 
+    pthread_mutex_unlock(&accountMutexes[value.header.account_id]);
+
+    if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_ACCOUNT, value.header.account_id) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+    pthread_mutex_unlock(&accountMutexes[value.transfer.account_id]);
+
+    if (logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_ACCOUNT, value.transfer.account_id) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
+
+    reply->value.header.ret_code = RC_OK;
     reply->length += sizeof(rep_transfer_t);
 }
 
@@ -588,14 +637,12 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
 
 void handleShutdown(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
 
-    // autentication
+    // authentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
         printf("The id and password combination is invalid.\n");
         reply->value.header.ret_code = RC_LOGIN_FAIL;
         return;
     }
-
-
 
     if(!isAdmin(value.header.account_id)) {
         printf("User is not admin; doesn't have permission!\n");
@@ -605,6 +652,11 @@ void handleShutdown(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
 
     // delay is in milisseconds; usleep() needs microsseconds
     usleep(value.header.op_delay_ms * 1000); // ANTES DE IMPEDIR QUE SE RECEBA MAIS PEDIDOS
+
+    if (logSyncDelay(fdServerLogFile, bankOfficeId, value.header.account_id, value.header.op_delay_ms) < 0) {
+        perror("Write in server log file");
+        exit(EXIT_FAILURE);
+    }
 
     // changes FIFO permissions to read only, to avoid receiving new requests
     if(fchmod(fdFifoServer, S_IRUSR | S_IRGRP | S_IROTH ) < 0) {

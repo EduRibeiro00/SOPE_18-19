@@ -1,7 +1,7 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -Werror -pedantic
+CFLAGS=-Wall -Wextra -Werror -pedantic -D_REENTRANT -lpthread -lrt
 DEPS= constants.h aux.h types.h sope.h user.h server.h
-OBJS= log.o aux.o 
+OBJS= log.o aux.o
 
 .PHONY: all clean
 all: server user
