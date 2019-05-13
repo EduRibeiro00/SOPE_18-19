@@ -237,8 +237,6 @@ int main(int argc, char* argv[]) {
     // open server FIFO
     fdFifoServer = open(SERVER_FIFO_PATH, O_WRONLY);
     if(fdFifoServer == -1) {
-        // perror("Open server FIFO");
-        // exit(EXIT_FAILURE);
         replyMsg.value.header.ret_code = RC_SRV_DOWN;
     }
 
@@ -255,35 +253,37 @@ int main(int argc, char* argv[]) {
 
         // send request to server program
         if((n = write(fdFifoServer, &tlvRequestMsg, totalLength)) < 0) {
-            perror("Write request to server");
-            exit(EXIT_FAILURE);
+            replyMsg.value.header.ret_code = RC_SRV_DOWN;
         }
 
-        // SIGALRM is sent after FIFO_TIMEOUT_SECS, if server did not reply
-        alarm(FIFO_TIMEOUT_SECS);
+        if(replyMsg.value.header.ret_code !=  RC_SRV_DOWN) {
 
-        // opens user FIFO
-        fdFifoUser = open(fifoName, O_RDONLY);
-        if(fdFifoUser == -1) {
-            perror("Open user FIFO");
-            exit(EXIT_FAILURE);
-        }
+            // SIGALRM is sent after FIFO_TIMEOUT_SECS, if server did not reply
+            alarm(FIFO_TIMEOUT_SECS);
 
-        readReply(&replyMsg, fdFifoUser);
+            // opens user FIFO
+            fdFifoUser = open(fifoName, O_RDONLY);
+            if(fdFifoUser == -1) {
+                perror("Open user FIFO");
+                exit(EXIT_FAILURE);
+            }
 
-        // cancels the alarm, because the reply was given before FIFO_TIMEOUT_SECS
-        alarm(0);
+            readReply(&replyMsg, fdFifoUser);
 
-        // close file descriptors
-        if(close(fdFifoUser) != 0) {
-            perror("close");
-            exit(EXIT_FAILURE);
-        }
+            // cancels the alarm, because the reply was given before FIFO_TIMEOUT_SECS
+            alarm(0);
 
-        if(close(fdFifoServer) != 0) {
-            perror("close");
-            exit(EXIT_FAILURE);
-        }
+            // close file descriptors
+            if(close(fdFifoUser) != 0) {
+                perror("close");
+                exit(EXIT_FAILURE);
+            }
+
+            if(close(fdFifoServer) != 0) {
+                perror("close");
+                exit(EXIT_FAILURE);
+            }
+        }   
     }
 
     // writes reply in user log file

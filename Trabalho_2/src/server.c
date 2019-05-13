@@ -200,7 +200,6 @@ void* bankOfficeFunction(void* arg) {
 
         // opens user fifo to send reply message
         if((fdFifoUser = open(fifoNameUser, O_WRONLY)) == -1) {
-            // perror("Open user FIFO to write");
             reply.value.header.ret_code = RC_USR_DOWN;
         }
 
@@ -209,10 +208,13 @@ void* bankOfficeFunction(void* arg) {
         
             writeReply(&reply, fdFifoUser);
 
-            // closes user FIFO
-            if(close(fdFifoUser) != 0) {
-                perror("close");
-                exit(EXIT_FAILURE);
+            if(reply.value.header.ret_code != RC_USR_DOWN) {
+               
+                // closes user FIFO
+                if(close(fdFifoUser) != 0) {
+                    perror("close");
+                    exit(EXIT_FAILURE);
+                }
             }
         }
 
@@ -389,8 +391,7 @@ void writeReply(tlv_reply_t* reply, int fdFifoUser) {
 
     // send request to server program
     if((n = write(fdFifoUser, reply, totalLength)) < 0) {
-        perror("Write reply to user");
-        exit(EXIT_FAILURE);
+        reply->value.header.ret_code = RC_USR_DOWN;
     }
 }
 
