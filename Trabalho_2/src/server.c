@@ -67,7 +67,8 @@ int main(int argc, char* argv[]) {
     createAdminAccount(argv[2]);
 
     // thread creation
-    int numBankOffices = atoi(argv[1]);
+    // int numBankOffices = atoi(argv[1]);
+    int numBankOffices = MIN(atoi(argv[1]), MAX_BANK_OFFICES);
     bank_office_t bankOffices[numBankOffices];
     createBankOffices(bankOffices, numBankOffices);
 
@@ -576,7 +577,7 @@ void handleCheckBalance(req_value_t value, tlv_reply_t* reply, int bankOfficeId)
 
 void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
     
-    // This cycle is done in order to prevent a deadlock. Because we are trying to gain access to two accounts,
+    // The following min/max strategy is done in order to prevent a deadlock. Because we are trying to gain access to two accounts,
     // this can cause a "circular wait" with other threads. To prevent that, we always gain access to the account
     // with the lowest id first, so that these cycles will never occur.
 

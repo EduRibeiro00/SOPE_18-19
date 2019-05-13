@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    // check if passoword is in the valid length range (if it is not, it will never be a password for an account)
+    // check if password is in the valid length range (if it is not, it will never be a password for an account)
     if(strlen(msgHeader.password) < MIN_PASSWORD_LEN || strlen(msgHeader.password) > MAX_PASSWORD_LEN) {
         printf("Illegal password length!\n");
         exit(EXIT_FAILURE);
