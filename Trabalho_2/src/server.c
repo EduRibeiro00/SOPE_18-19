@@ -641,6 +641,8 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
         return;
     }
 
+    reply->value.header.ret_code = RC_OK;
+
     // checks if the source account is admin
     if(isAdmin(value.header.account_id)) {
         printf("User is admin; can't perform this operation!\n");
@@ -710,7 +712,6 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
     }
 
 
-    reply->value.header.ret_code = RC_OK;
     reply->length += sizeof(rep_transfer_t);
 }
 
