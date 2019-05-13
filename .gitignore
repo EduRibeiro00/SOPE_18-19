@@ -1,5 +1,5 @@
-Trabalho_1/*.txt
-Trabalho_1/*.csv
+*.txt
+*.csv
 *.o
 *.d
 .vscode

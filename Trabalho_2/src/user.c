@@ -34,6 +34,7 @@ int main(int argc, char* argv[]) {
 
     if(argc != 6) {
         fprintf(stderr, "Illegal use of arguments! Usage: %s <ID> <\"password\"> <op_delay> <op_code> <args> \n", argv[0]);
+        exit(EXIT_FAILURE);
     }
 
     // calls the handler installer, for SIGALRM
@@ -140,6 +141,11 @@ int main(int argc, char* argv[]) {
         // verification of the argument values
         if(strlen(msgArgs.password) < MIN_PASSWORD_LEN || strlen(msgArgs.password) > MAX_PASSWORD_LEN) {
             printf("Illegal password length!\n");
+            exit(EXIT_FAILURE);
+        }
+
+        if(hasSpaces(msgArgs.password)) {
+            printf("Password must not contain spaces!\n");
             exit(EXIT_FAILURE);
         }
 

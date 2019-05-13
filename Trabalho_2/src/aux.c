@@ -139,6 +139,16 @@ void initReply(tlv_request_t request, tlv_reply_t* reply) {
 
 // ---------------------------------
 
+bool hasSpaces(char* password) {
+    for (size_t i = 0; i < strlen(password); i++) {
+        if (password[i] == ' ')
+            return true;
+    }
+    return false;
+}
+
+// ---------------------------------
+
 int printRequest(tlv_request_t request) {
 
     int returnValue = 1;

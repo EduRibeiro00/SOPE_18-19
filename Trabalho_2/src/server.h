@@ -110,3 +110,6 @@ void syncSlotsBankOffice(int bankOfficeId, int requestPid);
 
 // synchronization function related to the buffer items; to be used by the bank offices (threads)
 void syncItemsBankOffice(int bankOfficeId);
+
+// destroys all mutexes, at the end of the program
+void destroySync();

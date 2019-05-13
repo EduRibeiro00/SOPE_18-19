@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -Werror -pedantic -D_REENTRANT -lpthread -lrt
+CFLAGS=-Wall -Wextra -Werror -pedantic -D_REENTRANT -pthread -lrt
 DEPS= constants.h aux.h types.h sope.h user.h server.h
 OBJS= log.o aux.o
 
@@ -13,7 +13,7 @@ user: $(OBJS) user.o
 	$(CC) $(CFLAGS) $^ -o $@
 
 %.o: %.c $(DEPS)
-	$(CC) $(CFLAGS) -MMD -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 	
 clean:
-	rm -f $(TARGETS) *.o *.d *.i *.s
+	rm -f server user *.o *.d *.i *.s

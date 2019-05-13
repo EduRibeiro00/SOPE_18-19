@@ -24,6 +24,9 @@
 #define READ  0
 #define WRITE 1
 
+#define MIN(a, b) (a) < (b) ? (a) : (b)
+#define MAX(a, b) (b) > (a) ? (b) : (a)
+
 
 // string has to be SALT_LEN + 1 length
 void generateRandomSalt(char* salt);
@@ -34,6 +37,8 @@ void generateHash(char* password, char* salt, char* hashResult);
 // fills the reply struct with the initial values
 void initReply(tlv_request_t request, tlv_reply_t* reply);
 
+// checks if a given string has spaces
+bool hasSpaces(char* password);
 
 
 // test function; just to see if server is getting the user requests

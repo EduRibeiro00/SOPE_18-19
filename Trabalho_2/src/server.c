@@ -99,6 +99,12 @@ int main(int argc, char* argv[]) {
     do {
         syncSlotsMainThread();
 
+        tlv_request_t currentRequest;
+
+        // reads the request from a user, and sends it to the request queue
+        readRequest(&currentRequest);
+        int requestPid = currentRequest.value.header.pid;
+
         // tries to gain access to the buffer
         pthread_mutex_lock(&buffer_lock);
 
@@ -107,16 +113,13 @@ int main(int argc, char* argv[]) {
             exit(EXIT_FAILURE);
         }
 
-        // reads the request from a user, and sends it to the request queue
-        readRequest(&requests[bufferIn]);
-        int requestPid = requests[bufferIn].value.header.pid;
+        requests[bufferIn] = currentRequest;
+        bufferIn = (bufferIn + 1) % MAX_REQUESTS;
 
-        if(logRequest(fdServerLogFile, MAIN_THREAD_ID, &requests[bufferIn]) < 0) {
+        if(logRequest(fdServerLogFile, MAIN_THREAD_ID, &currentRequest) < 0) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
-
-        bufferIn = (bufferIn + 1) % MAX_REQUESTS;
 
         pthread_mutex_unlock(&buffer_lock);
 
@@ -147,6 +150,8 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    destroySync();
+
     return 0;
 }
 
@@ -170,14 +175,14 @@ void* bankOfficeFunction(void* arg) {
         tlv_request_t currentRequest = requests[bufferOut];
         bufferOut = (bufferOut + 1) % MAX_REQUESTS;
 
-        pthread_mutex_unlock(&buffer_lock);
-
-        if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_CONSUMER, currentRequest.value.header.pid) < 0) {
+        if(logRequest(fdServerLogFile, bankOfficeId, &currentRequest) < 0) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
 
-        if(logRequest(fdServerLogFile, bankOfficeId, &currentRequest) < 0) {
+        pthread_mutex_unlock(&buffer_lock);
+
+        if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_CONSUMER, currentRequest.value.header.pid) < 0) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
@@ -228,7 +233,7 @@ void createBankOffices(bank_office_t* bankOffices, int numThreads) {
     for(int i = 0; i < numThreads; i++) {
         bankOffices[i].id = i + 1;
         bankOffices[i].processing = false;
-        pthread_create(&bankOffices[i].tid, NULL, bankOfficeFunction, &bankOffices[i].id);
+        pthread_create(&bankOffices[i].tid, NULL, bankOfficeFunction, (void*) &bankOffices[i].id);
 
         if(logBankOfficeOpen(fdServerLogFile, bankOffices[i].id, bankOffices[i].tid) < 0) {
             perror("write to server log file");
@@ -323,6 +328,11 @@ void createAdminAccount(char* password) {
 
     if(strlen(password) < MIN_PASSWORD_LEN || strlen(password) > MAX_PASSWORD_LEN) {
         printf("Illegal password length!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (hasSpaces(password)) {
+        printf("Password must not contain spaces!\n");
         exit(EXIT_FAILURE);
     }
 
@@ -565,10 +575,16 @@ void handleCheckBalance(req_value_t value, tlv_reply_t* reply, int bankOfficeId)
 
 void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
     
-    // gaining access to first account
-    pthread_mutex_lock(&accountMutexes[value.header.account_id]);
+    // This cycle is done in order to prevent a deadlock. Because we are trying to gain access to two accounts,
+    // this can cause a "circular wait" with other threads. To prevent that, we always gain access to the account
+    // with the lowest id first, so that these cycles will never occur.
 
-    if (logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_ACCOUNT, value.header.account_id) < 0) {
+    uint32_t first = MIN(value.header.account_id, value.transfer.account_id);
+    uint32_t second = MAX(value.header.account_id, value.transfer.account_id);
+
+    pthread_mutex_lock(&accountMutexes[first]);
+
+    if (logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_ACCOUNT, first) < 0) {
         perror("Write in server log file");
         exit(EXIT_FAILURE);
     }
@@ -576,23 +592,51 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
     // -- delay is in milisseconds; usleep() needs microsseconds
     usleep(value.header.op_delay_ms * 1000);
 
-    if (logSyncDelay(fdServerLogFile, bankOfficeId, value.header.account_id, value.header.op_delay_ms) < 0) {
+    if (logSyncDelay(fdServerLogFile, bankOfficeId, first, value.header.op_delay_ms) < 0) {
         perror("Write in server log file");
         exit(EXIT_FAILURE);
     }
-    // DONE
+
+    if (second != first) {
+        pthread_mutex_lock(&accountMutexes[second]);
+
+        if (logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_ACCOUNT, second) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+
+        // -- delay is in milisseconds; usleep() needs microsseconds
+        usleep(value.header.op_delay_ms * 1000);
+
+        if (logSyncDelay(fdServerLogFile, bankOfficeId, second, value.header.op_delay_ms) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+    }
+
 
     // authentication
     if(!checkPassword(value.header.account_id, value.header.password)) {
         printf("The id and password combination is invalid.\n");
         reply->value.header.ret_code = RC_LOGIN_FAIL;
 
-        pthread_mutex_unlock(&accountMutexes[value.header.account_id]);
+        if (second != first) {
+            pthread_mutex_unlock(&accountMutexes[second]);
 
-        if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_ACCOUNT, value.header.account_id) < 0) {
+            if (logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_ACCOUNT, second) < 0) {
+                perror("Write in server log file");
+                exit(EXIT_FAILURE);
+            }
+        }
+
+
+        pthread_mutex_unlock(&accountMutexes[first]);
+
+        if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_ACCOUNT, first) < 0) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
+
 
         return;
     }
@@ -604,23 +648,6 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
     }
 
     if(reply->value.header.ret_code != RC_OP_NALLOW) {
-
-        // gaining access to second account
-        pthread_mutex_lock(&accountMutexes[value.transfer.account_id]);
-
-        if (logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_ACCOUNT, value.transfer.account_id) < 0) {
-            perror("Write in server log file");
-            exit(EXIT_FAILURE);
-        }
-
-        // -- delay is in milisseconds; usleep() needs microsseconds
-        usleep(value.header.op_delay_ms * 1000);
-
-        if (logSyncDelay(fdServerLogFile, bankOfficeId, value.transfer.account_id, value.header.op_delay_ms) < 0) {
-            perror("Write in server log file");
-            exit(EXIT_FAILURE);
-        }
-        // DONE
 
         bank_account_t* sourceAccount = getBankAccount(value.header.account_id);
         bank_account_t* destAccount = getBankAccount(value.transfer.account_id);
@@ -648,14 +675,7 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
 
 
         if(reply->value.header.ret_code == RC_OK)
-            transferAmount(sourceAccount, destAccount, value.transfer.amount);
-
-        pthread_mutex_unlock(&accountMutexes[value.transfer.account_id]);
-
-        if (logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_ACCOUNT, value.transfer.account_id) < 0) {
-            perror("Write in server log file");
-            exit(EXIT_FAILURE);
-        }    
+            transferAmount(sourceAccount, destAccount, value.transfer.amount);   
 
     }
 
@@ -671,12 +691,24 @@ void handleTransfer(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
         reply->value.transfer.balance = value.transfer.amount;
     }
 
-    pthread_mutex_unlock(&accountMutexes[value.header.account_id]);
 
-    if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_ACCOUNT, value.header.account_id) < 0) {
+    if (second != first) {
+        pthread_mutex_unlock(&accountMutexes[second]);
+
+        if (logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_ACCOUNT, second) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+
+    pthread_mutex_unlock(&accountMutexes[first]);
+
+    if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_ACCOUNT, first) < 0) {
         perror("Write in server log file");
         exit(EXIT_FAILURE);
     }
+
 
     reply->value.header.ret_code = RC_OK;
     reply->length += sizeof(rep_transfer_t);
@@ -870,4 +902,20 @@ void syncItemsBankOffice(int bankOfficeId) {
         perror("Write in server log file");
         exit(EXIT_FAILURE);
     }
+}
+
+// ---------------------------------
+
+void destroySync() {
+
+    for (size_t i = 0; i < MAX_BANK_ACCOUNTS; i++) {
+        pthread_mutex_destroy(&accountMutexes[i]);
+    }
+
+    pthread_mutex_destroy(&buffer_lock);
+    pthread_mutex_destroy(&slots_lock);
+    pthread_cond_destroy(&slots_cond);
+    pthread_mutex_destroy(&items_lock);
+    pthread_cond_destroy(&items_cond);
+    
 }
