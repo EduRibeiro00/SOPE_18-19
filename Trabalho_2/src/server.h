@@ -37,9 +37,6 @@ void createBankOffices(bank_office_t* bankOffices, int numThreads);
 // closes the bank offices
 void closeBankOffices(bank_office_t* bankOffices, int numThreads);
 
-// sets value of bank office processing flag to given argument
-void setBankOfficeProcessingFlag(uint32_t id, bool value); // <-- FALTA FAZER
-
 
 
 // checks if a password that a user send the server is valid
