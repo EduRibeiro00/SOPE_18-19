@@ -28,7 +28,6 @@
 typedef struct bank_office {
     pthread_t tid;
     int id;
-    bool processing;
 } bank_office_t;
 
 
@@ -61,8 +60,8 @@ bool getBalanceFromAccount(uint32_t id, uint32_t* balance);
 // creates the admin account, in the beginning of the program
 void createAdminAccount(char* password);
 
-// reads a user request from the server FIFO 
-void readRequest(tlv_request_t* request);
+// reads a user request from the server FIFO; returns 0 if the FIFO closes
+int readRequest(tlv_request_t* request);
 
 // writes a reply message to the user FIFO
 void writeReply(tlv_reply_t* reply, int fdFifoUser);
@@ -109,7 +108,8 @@ void syncItemsMainThread(int requestPid);
 void syncSlotsBankOffice(int bankOfficeId, int requestPid);
 
 // synchronization function related to the buffer items; to be used by the bank offices (threads)
-void syncItemsBankOffice(int bankOfficeId);
+// returns 1 if thread should end
+int syncItemsBankOffice(int bankOfficeId);
 
 // destroys all mutexes, at the end of the program
 void destroySync();

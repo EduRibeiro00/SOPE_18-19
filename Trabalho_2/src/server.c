@@ -31,6 +31,7 @@ int bufferIn = 0, bufferOut = 0, items = 0, slots = MAX_REQUESTS;
 int shutdownFlag = 0; // turns 1 when received a shutdown request
 
 int fdFifoServer;
+int fdFifoServerDummy;
 int fdServerLogFile;
 
 // sync mechanisms - producer/consumer
@@ -43,6 +44,7 @@ pthread_cond_t items_cond = PTHREAD_COND_INITIALIZER;
 // sync mechanisms - bank account array - one mutex per account (ex: mutex for account with id 2 is in index 2 of this array)
 pthread_mutex_t accountMutexes[MAX_BANK_ACCOUNTS];
 
+int fifoClosed = 0;
 int workingThreads = 0; // keeps track of the number of threads in operation
 // sync mechanisms - number of working threads - not present in the log files
 pthread_mutex_t workingT_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -86,9 +88,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-
-    int fdFifoServerDummy; // to avoid busy waiting
-
     if((fdFifoServer = open(SERVER_FIFO_PATH, O_RDONLY)) == -1) {
         perror("Open server FIFO to read");
         exit(EXIT_FAILURE);
@@ -101,13 +100,13 @@ int main(int argc, char* argv[]) {
 
 
     // reads the requests and sends them to the request queue
-    do {
+    while(1) {
         syncSlotsMainThread();
 
         tlv_request_t currentRequest;
 
         // reads the request from a user, and sends it to the request queue
-        readRequest(&currentRequest);
+        fifoClosed = readRequest(&currentRequest);
         int requestPid = currentRequest.value.header.pid;
 
         // tries to gain access to the buffer
@@ -135,8 +134,12 @@ int main(int argc, char* argv[]) {
 
         syncItemsMainThread(requestPid);
 
-    } while(!shutdownFlag); // (temporario; n e bem assim q deve ser feito no fim) (?)
-
+        // unlocks all the waiting threads, so they can exit
+        if (shutdownFlag && fifoClosed && (workingThreads == 0)) {
+            pthread_cond_broadcast(&items_cond);
+            break;
+        }
+    }
 
     closeBankOffices(bankOffices, numBankOffices);
 
@@ -145,10 +148,10 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    if(close(fdFifoServerDummy) != 0) {
-        perror("close");
-        exit(EXIT_FAILURE);
-    }
+    // if(close(fdFifoServerDummy) != 0) {
+    //     perror("close");
+    //     exit(EXIT_FAILURE);
+    // }
 
     if(unlink(SERVER_FIFO_PATH) != 0) {
         perror("unlink");
@@ -166,9 +169,16 @@ void* bankOfficeFunction(void* arg) {
 
     int bankOfficeId = *(int*) arg;
 
-    while(!shutdownFlag) {
-        
-        syncItemsBankOffice(bankOfficeId);
+    while(1) {
+    
+        // in order to close the thread
+        if (shutdownFlag && fifoClosed && (items == 0))
+            break;
+
+        // in order to close the thread; also part of the producer-consumer strategy
+        if (syncItemsBankOffice(bankOfficeId)) {
+            break;
+        }
 
         pthread_mutex_lock(&buffer_lock);
 
@@ -177,6 +187,10 @@ void* bankOfficeFunction(void* arg) {
             exit(EXIT_FAILURE);
         }
 
+        pthread_mutex_lock(&workingT_mutex);
+        workingThreads++;
+        pthread_mutex_unlock(&workingT_mutex);
+
         tlv_request_t currentRequest = requests[bufferOut];
         bufferOut = (bufferOut + 1) % MAX_REQUESTS;
 
@@ -184,10 +198,6 @@ void* bankOfficeFunction(void* arg) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
-
-        pthread_mutex_lock(&workingT_mutex);
-        workingThreads++;
-        pthread_mutex_unlock(&workingT_mutex);
 
         pthread_mutex_unlock(&buffer_lock);
 
@@ -247,7 +257,6 @@ void createBankOffices(bank_office_t* bankOffices, int numThreads) {
 
     for(int i = 0; i < numThreads; i++) {
         bankOffices[i].id = i + 1;
-        bankOffices[i].processing = false;
         pthread_create(&bankOffices[i].tid, NULL, bankOfficeFunction, (void*) &bankOffices[i].id);
 
         if(logBankOfficeOpen(fdServerLogFile, bankOffices[i].id, bankOffices[i].tid) < 0) {
@@ -269,7 +278,9 @@ void closeBankOffices(bank_office_t* bankOffices, int numThreads) {
             perror("write to server log file");
             exit(EXIT_FAILURE);
         }
+
     }
+
 }
 
 // ---------------------------------
@@ -368,7 +379,7 @@ void createAdminAccount(char* password) {
 
 // ---------------------------------
 
-void readRequest(tlv_request_t* request) {
+int readRequest(tlv_request_t* request) {
 
     int n;
 
@@ -378,6 +389,7 @@ void readRequest(tlv_request_t* request) {
         exit(EXIT_FAILURE);
     }
 
+    if (n == 0) return 1;
 
     // reads request length
     if((n = read(fdFifoServer, &(request->length), sizeof(uint32_t))) < 0) {
@@ -385,6 +397,7 @@ void readRequest(tlv_request_t* request) {
         exit(EXIT_FAILURE);
     }
 
+    if (n == 0) return 1;
 
     // reads request value
     if((n = read(fdFifoServer, &(request->value), request->length)) < 0) {
@@ -392,6 +405,9 @@ void readRequest(tlv_request_t* request) {
         exit(EXIT_FAILURE);
     }
 
+    if (n == 0) return 1;
+
+    return 0;
 }
 
 // ---------------------------------
@@ -760,6 +776,11 @@ void handleShutdown(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
         exit(EXIT_FAILURE);
     }
     
+    if (close(fdFifoServerDummy) != 0) {
+        perror("close");
+        exit(EXIT_FAILURE);
+    }
+
     reply->value.header.ret_code = RC_OK;
 
     // PROGRAMA SO DEVE TERMINAR QUANDO TODOS OS PEDIDOS RESTANTES FOREM PROCESSADOS
@@ -893,7 +914,7 @@ void syncSlotsBankOffice(int bankOfficeId, int requestPid) {
 
 // ---------------------------------
 
-void syncItemsBankOffice(int bankOfficeId) {
+int syncItemsBankOffice(int bankOfficeId) {
 
     pthread_mutex_lock(&items_lock);
 
@@ -910,6 +931,24 @@ void syncItemsBankOffice(int bankOfficeId) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
+
+        // there are two reasons for the thread to exit the waiting cycle:
+        // - there is an item that must be processed
+        // - there are no items and the thread should end
+        // thus this condition must be checked in order to know whether
+        // the thread should end or process a request
+        if (shutdownFlag && fifoClosed && (items == 0)) {
+
+            pthread_mutex_unlock(&items_lock);
+
+            if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_CONSUMER, 0) < 0) {
+                perror("Write in server log file");
+                exit(EXIT_FAILURE);
+            }
+
+            return 1;
+
+        }
     }
 
     items--;
@@ -919,6 +958,8 @@ void syncItemsBankOffice(int bankOfficeId) {
         perror("Write in server log file");
         exit(EXIT_FAILURE);
     }
+
+    return 0;
 }
 
 // ---------------------------------
