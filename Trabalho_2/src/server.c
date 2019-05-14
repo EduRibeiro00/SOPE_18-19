@@ -28,8 +28,6 @@ int numAccounts = 0;
 tlv_request_t requests[MAX_REQUESTS];
 int bufferIn = 0, bufferOut = 0, items = 0, slots = MAX_REQUESTS;
 
-int shutdownFlag = 0; // turns 1 when received a shutdown request
-
 int fdFifoServer;
 int fdFifoServerDummy;
 int fdServerLogFile;
@@ -73,7 +71,6 @@ int main(int argc, char* argv[]) {
     createAdminAccount(argv[2]);
 
     // thread creation
-    // int numBankOffices = atoi(argv[1]);
     int numBankOffices = MIN(atoi(argv[1]), MAX_BANK_OFFICES);
     bank_office_t bankOffices[numBankOffices];
     createBankOffices(bankOffices, numBankOffices);
@@ -110,7 +107,7 @@ int main(int argc, char* argv[]) {
         int requestPid = currentRequest.value.header.pid;
 
         // unlocks all the waiting threads, so they can exit
-        if (shutdownFlag && fifoClosed) {
+        if (fifoClosed) {
             pthread_cond_broadcast(&items_cond);
             break;
         }
@@ -140,12 +137,6 @@ int main(int argc, char* argv[]) {
 
         syncItemsMainThread(requestPid);
 
-        // PODE SE TIRAR?
-        // unlocks all the waiting threads, so they can exit
-        if (shutdownFlag && fifoClosed) {
-            pthread_cond_broadcast(&items_cond);
-            break;
-        }
     }
 
     closeBankOffices(bankOffices, numBankOffices);
@@ -174,7 +165,7 @@ void* bankOfficeFunction(void* arg) {
     while(1) {
     
         // in order to close the thread
-        if (shutdownFlag && fifoClosed && (items == 0))
+        if (fifoClosed && (items == 0))
             break;
 
         // in order to close the thread; also part of the producer-consumer strategy
@@ -793,14 +784,6 @@ void handleShutdown(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
 
     reply->value.header.ret_code = RC_OK;
     // o valor de retorno ira ser adicionado no momento antes do envio, tal como e pedido
-
-    // pthread_mutex_lock(&workingT_mutex);
-    // reply->value.shutdown.active_offices = workingThreads;
-    // pthread_mutex_unlock(&workingT_mutex);
-
-    // reply->length += sizeof(rep_shutdown_t);
-
-    shutdownFlag = 1;
 }
 
 // ---------------------------------
@@ -946,7 +929,7 @@ int syncItemsBankOffice(int bankOfficeId) {
         // - there are no items and the thread should end
         // thus this condition must be checked in order to know whether
         // the thread should end or process a request
-        if (shutdownFlag && fifoClosed && (items == 0)) {
+        if (fifoClosed && (items == 0)) {
 
             pthread_mutex_unlock(&items_lock);
 
