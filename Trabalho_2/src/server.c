@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
         int requestPid = currentRequest.value.header.pid;
 
         // unlocks all the waiting threads, so they can exit
-        if (shutdownFlag && fifoClosed /* && (workingThreads == 0) */) {
+        if (shutdownFlag && fifoClosed) {
             pthread_cond_broadcast(&items_cond);
             break;
         }
@@ -141,7 +141,7 @@ int main(int argc, char* argv[]) {
         syncItemsMainThread(requestPid);
 
         // unlocks all the waiting threads, so they can exit
-        if (shutdownFlag && fifoClosed /* && (workingThreads == 0) */) {
+        if (shutdownFlag && fifoClosed) {
             pthread_cond_broadcast(&items_cond);
             break;
         }
@@ -153,11 +153,6 @@ int main(int argc, char* argv[]) {
         perror("close");
         exit(EXIT_FAILURE);
     }
-
-    // if(close(fdFifoServerDummy) != 0) {
-    //     perror("close");
-    //     exit(EXIT_FAILURE);
-    // }
 
     if(unlink(SERVER_FIFO_PATH) != 0) {
         perror("unlink");
@@ -789,8 +784,7 @@ void handleShutdown(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
 
     reply->value.header.ret_code = RC_OK;
 
-    // PROGRAMA SO DEVE TERMINAR QUANDO TODOS OS PEDIDOS RESTANTES FOREM PROCESSADOS
-    
+
     pthread_mutex_lock(&workingT_mutex);
     reply->value.shutdown.active_offices = workingThreads;
     pthread_mutex_unlock(&workingT_mutex);
