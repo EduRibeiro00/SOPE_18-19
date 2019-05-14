@@ -57,7 +57,7 @@ bool getBalanceFromAccount(uint32_t id, uint32_t* balance);
 // creates the admin account, in the beginning of the program
 void createAdminAccount(char* password);
 
-// reads a user request from the server FIFO; returns 0 if the FIFO closes
+// reads a user request from the server FIFO; returns 1 if the FIFO closes
 int readRequest(tlv_request_t* request);
 
 // writes a reply message to the user FIFO
