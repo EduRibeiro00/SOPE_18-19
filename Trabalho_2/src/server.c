@@ -140,6 +140,7 @@ int main(int argc, char* argv[]) {
 
         syncItemsMainThread(requestPid);
 
+        // PODE SE TIRAR?
         // unlocks all the waiting threads, so they can exit
         if (shutdownFlag && fifoClosed) {
             pthread_cond_broadcast(&items_cond);
@@ -226,6 +227,14 @@ void* bankOfficeFunction(void* arg) {
         // sends reply (if user FIFO was open)
         if(reply.value.header.ret_code != RC_USR_DOWN) {
         
+            if(reply.type == OP_SHUTDOWN && reply.value.header.ret_code == RC_OK) {
+                pthread_mutex_lock(&workingT_mutex);
+                reply.value.shutdown.active_offices = workingThreads - 1; // excluindo a propria thread que esta a processar o shutdown
+                pthread_mutex_unlock(&workingT_mutex);
+
+                reply.length += sizeof(rep_shutdown_t);
+            }
+
             writeReply(&reply, fdFifoUser);
 
             if(reply.value.header.ret_code != RC_USR_DOWN) {
@@ -783,13 +792,13 @@ void handleShutdown(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
     }
 
     reply->value.header.ret_code = RC_OK;
+    // o valor de retorno ira ser adicionado no momento antes do envio, tal como e pedido
 
+    // pthread_mutex_lock(&workingT_mutex);
+    // reply->value.shutdown.active_offices = workingThreads;
+    // pthread_mutex_unlock(&workingT_mutex);
 
-    pthread_mutex_lock(&workingT_mutex);
-    reply->value.shutdown.active_offices = workingThreads;
-    pthread_mutex_unlock(&workingT_mutex);
-
-    reply->length += sizeof(rep_shutdown_t);
+    // reply->length += sizeof(rep_shutdown_t);
 
     shutdownFlag = 1;
 }
