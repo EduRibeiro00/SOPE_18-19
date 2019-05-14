@@ -109,6 +109,12 @@ int main(int argc, char* argv[]) {
         fifoClosed = readRequest(&currentRequest);
         int requestPid = currentRequest.value.header.pid;
 
+        // unlocks all the waiting threads, so they can exit
+        if (shutdownFlag && fifoClosed /* && (workingThreads == 0) */) {
+            pthread_cond_broadcast(&items_cond);
+            break;
+        }
+
         // tries to gain access to the buffer
         pthread_mutex_lock(&buffer_lock);
 
@@ -135,7 +141,7 @@ int main(int argc, char* argv[]) {
         syncItemsMainThread(requestPid);
 
         // unlocks all the waiting threads, so they can exit
-        if (shutdownFlag && fifoClosed && (workingThreads == 0)) {
+        if (shutdownFlag && fifoClosed /* && (workingThreads == 0) */) {
             pthread_cond_broadcast(&items_cond);
             break;
         }
