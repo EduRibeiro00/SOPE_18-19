@@ -42,6 +42,10 @@ pthread_cond_t items_cond = PTHREAD_COND_INITIALIZER;
 
 // sync mechanisms - bank account array - one mutex per account (ex: mutex for account with id 2 is in index 2 of this array)
 pthread_mutex_t accountMutexes[MAX_BANK_ACCOUNTS];
+
+int workingThreads = 0; // keeps track of the number of threads in operation
+// sync mechanisms - number of working threads - not present in the log files
+pthread_mutex_t workingT_mutex = PTHREAD_MUTEX_INITIALIZER;
 //--------------------------
 
 int main(int argc, char* argv[]) {
@@ -181,6 +185,10 @@ void* bankOfficeFunction(void* arg) {
             exit(EXIT_FAILURE);
         }
 
+        pthread_mutex_lock(&workingT_mutex);
+        workingThreads++;
+        pthread_mutex_unlock(&workingT_mutex);
+
         pthread_mutex_unlock(&buffer_lock);
 
         if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_CONSUMER, currentRequest.value.header.pid) < 0) {
@@ -223,6 +231,10 @@ void* bankOfficeFunction(void* arg) {
             perror("Write in server log file");
             exit(EXIT_FAILURE);
         }
+
+        pthread_mutex_lock(&workingT_mutex);
+        workingThreads--;
+        pthread_mutex_unlock(&workingT_mutex);
 
     }
 
@@ -752,8 +764,10 @@ void handleShutdown(req_value_t value, tlv_reply_t* reply, int bankOfficeId) {
 
     // PROGRAMA SO DEVE TERMINAR QUANDO TODOS OS PEDIDOS RESTANTES FOREM PROCESSADOS
     
-    // RETORNAR TAMBEM O NUMERO DE THREADS ATIVAS (A PROCESSAR UM PEDIDO) NO MOMENTO DO ENVIO.
-    reply->value.shutdown.active_offices = 1; // por agora fica 1, como valor de teste
+    pthread_mutex_lock(&workingT_mutex);
+    reply->value.shutdown.active_offices = workingThreads;
+    pthread_mutex_unlock(&workingT_mutex);
+
     reply->length += sizeof(rep_shutdown_t);
 
     shutdownFlag = 1;
