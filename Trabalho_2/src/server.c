@@ -163,10 +163,6 @@ void* bankOfficeFunction(void* arg) {
     int bankOfficeId = *(int*) arg;
 
     while(1) {
-    
-        // in order to close the thread
-        if (fifoClosed && (items == 0))
-            break;
 
         // in order to close the thread; also part of the producer-consumer strategy
         if (syncItemsBankOffice(bankOfficeId)) {
@@ -913,6 +909,18 @@ int syncItemsBankOffice(int bankOfficeId) {
     if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_LOCK, SYNC_ROLE_CONSUMER, 0) < 0) {
         perror("Write in server log file");
         exit(EXIT_FAILURE);
+    }
+
+    // in order to close the thread
+    if (fifoClosed && (items == 0)) {
+        pthread_mutex_unlock(&items_lock);
+
+        if(logSyncMech(fdServerLogFile, bankOfficeId, SYNC_OP_MUTEX_UNLOCK, SYNC_ROLE_CONSUMER, 0) < 0) {
+            perror("Write in server log file");
+            exit(EXIT_FAILURE);
+        }
+        
+        return 1;
     }
 
     // waits until there are requests to collect and process
