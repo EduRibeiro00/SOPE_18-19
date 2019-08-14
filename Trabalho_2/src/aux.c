@@ -19,6 +19,7 @@
 #include "types.h"
 #include "aux.h"
 
+
 // string tem de ter SALT_LEN + 1 length
 void generateRandomSalt(char* salt) {
 
